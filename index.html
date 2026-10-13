@@ -392,17 +392,26 @@
       const TRANS_MOBILE = "https://fanyi.baidu.com/m/trans?from=en&to=zh&query=";
       const LV = ["A1", "A2", "B1", "B2", "C1"];
       const LEVELS = LV.concat(["ALL"]);
+      const SIZES = [20, 50, 100, 200, 500];
 
       let done = new Set();
       try {
         done = new Set(JSON.parse(localStorage.getItem(KEY) || "[]"));
       } catch (e) {}
 
-      let lv = "A1",
-        mode = "all",
-        kw = "",
-        page = 1,
-        size = 20;
+      // 浏览位置存 sessionStorage：手机端点单词去百度翻译，按返回键回来时
+      // 还停在原来的等级、搜索词和页码，不用重新翻一遍。
+      const VKEY = "ox5000-view-v1";
+      let vs = {};
+      try {
+        vs = JSON.parse(sessionStorage.getItem(VKEY) || "{}");
+      } catch (e) {}
+
+      let lv = LEVELS.indexOf(vs.lv) >= 0 ? vs.lv : "A1",
+        mode = ["all", "todo", "done"].indexOf(vs.mode) >= 0 ? vs.mode : "all",
+        kw = typeof vs.kw === "string" ? vs.kw : "",
+        page = vs.page > 0 ? Math.floor(vs.page) : 1,
+        size = SIZES.indexOf(vs.size) >= 0 ? vs.size : 20;
 
       const STORE = {}; // 已加载等级的原生数据
       const loaded = new Set();
@@ -637,6 +646,7 @@
         const a = filtered();
         const pages = Math.max(1, Math.ceil(a.length / size));
         if (page > pages) page = pages;
+        saveView(); // 所有改动视图的入口都会走到这里，放在页码收敛之后
         const slice = a.slice((page - 1) * size, page * size);
 
         // 进度始终按"当前等级"统计，搜索跨等级时也不跟着变
@@ -668,7 +678,7 @@
           h +=
             `<tr class="${on ? "done" : ""}">` +
             `<td class="num">${start + i + 1}</td>` +
-            `<td class="w"><a href="${esc(transUrl(d.w))}" target="_blank" rel="noopener">${esc(d.w)}</a></td>` +
+            `<td class="w"><a href="${esc(transUrl(d.w))}"${IS_MOBILE ? "" : ' target="_blank" rel="noopener"'}>${esc(d.w)}</a></td>` +
             `<td class="p">${esc(d.p)}${d.sc ? `<span class="src">${d.sc}</span>` : ""}</td>` +
             `<td class="cn">${esc(d.cn)}${d.sn ? `<span class="sn">（${esc(d.sn)}）</span>` : ""}</td>` +
             `<td><label class="sw"><input type="checkbox" data-k="${esc(d._k)}" ${on ? "checked" : ""}><span></span></label></td>` +
@@ -691,6 +701,16 @@
       function save() {
         try {
           localStorage.setItem(KEY, JSON.stringify([...done]));
+        } catch (e) {}
+      }
+
+      // 只要视图状态变了就记一份：点单词跳走再回来，能回到原处
+      function saveView() {
+        try {
+          sessionStorage.setItem(
+            VKEY,
+            JSON.stringify({ lv, mode, kw, page, size }),
+          );
         } catch (e) {}
       }
 
@@ -755,7 +775,16 @@
         // 单文件版会把全部数据内联进 window.OX；PWA 版只预载 A1
         for (const L of Object.keys(window.OX || {})) register(L);
         buildTabs();
-        await ensure(lv);
+
+        // 还原上次的搜索词与筛选状态（从百度翻译按返回键回来时）
+        const qEl = document.getElementById("q");
+        if (kw) qEl.value = kw;
+        document
+          .querySelectorAll("[data-m]")
+          .forEach((x) => x.classList.toggle("on", x.dataset.m === mode));
+
+        // 有搜索词就说明当时跨等级搜过，把全部等级补齐后再渲染
+        await ensure(kw ? "ALL" : lv);
         render();
 
         if ("serviceWorker" in navigator && location.protocol !== "file:") {
