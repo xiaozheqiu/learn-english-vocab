@@ -1,6 +1,6 @@
 // Oxford 5000 词汇表 service worker
 // 版本号由 词汇/build.mjs 在构建时写入；改动后版本会自动变，旧缓存随即清掉。
-const VERSION = "ox5000-ab377e8b40";
+const VERSION = "ox5000-d3a1aa9e20";
 const CACHE = VERSION;
 
 // 预缓存：外壳 + 首屏要用的 A1。其余等级等用到再缓存，避免一上来就下满 92KB。

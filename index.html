@@ -2,7 +2,11 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- 禁止双指缩放/双击放大：这是词表，滚动浏览才是主要操作 -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
+    />
     <script>
       window.OX = window.OX || {};
     </script>
@@ -356,6 +360,34 @@
       }
       #loadbar.off {
         display: none;
+      }
+      /* 移动端禁掉双指缩放与双击放大：这是词表，滚动浏览才是主要操作。
+         iOS Safari 会忽略 user-scalable=no，所以用 touch-action 再兜一层：
+         pan-x pan-y 只保留滚动，不含缩放。 */
+      html,
+      body,
+      .wrap,
+      #list,
+      table,
+      td,
+      th,
+      .bar,
+      .pager {
+        touch-action: pan-x pan-y;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      /* iOS 上输入框字号小于 16px 时，聚焦会自动放大页面，跟缩放无关，单独兜住 */
+      @media (max-width: 820px) {
+        input[type="search"],
+        .pager input[type="number"],
+        .pager select {
+          font-size: 16px;
+        }
+        .pager input[type="number"] {
+          width: 68px;
+        }
       }
     </style>
   </head>
@@ -793,6 +825,13 @@
           });
         }
       }
+
+      // 老版本 iOS Safari 会忽略 user-scalable=no，用 gesture 事件再兜一层
+      ["gesturestart", "gesturechange", "gestureend"].forEach((t) => {
+        document.addEventListener(t, (e) => e.preventDefault(), {
+          passive: false,
+        });
+      });
 
       // defer 的 data/A1.js 会在 DOMContentLoaded 之前执行完，所以这里一定能拿到 A1
       document.addEventListener("DOMContentLoaded", boot);
