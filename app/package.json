@@ -1,0 +1,25 @@
+{
+  "name": "oxford5000-vue",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "data": "node scripts/build-data.mjs",
+    "dev": "npm run data && vite",
+    "build": "npm run data && vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
+    "vue": "3.5.40"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.10",
+    "vite": "^8.2.0",
+    "vite-plugin-pwa": "^2.0.0"
+  },
+  "overrides": {
+    "@babel/traverse": "7.29.7",
+    "@babel/parser": "7.29.7"
+  }
+}
