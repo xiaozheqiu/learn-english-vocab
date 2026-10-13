@@ -15,7 +15,7 @@ export default defineConfig(({ command }) => ({
         name: "Oxford 5000 词汇表",
         short_name: "Oxford 5000",
         description:
-          "Oxford 3000 / 5000 分级词汇表（A1–C1，共 5323 条）。可勾选标记已掌握，登录后多端同步。",
+          "Oxford 3000 / 5000 分级词汇表（A1–C1，共 5323 条）。可勾选标记已掌握，连接 GitHub 后多端同步。",
         lang: "zh-CN",
         start_url: ".",
         scope: ".",
@@ -41,8 +41,8 @@ export default defineConfig(({ command }) => ({
         navigateFallback: "index.html",
         runtimeCaching: [
           {
-            // Supabase 请求永远走网络，不缓存进度数据
-            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.co\/.*/i,
+            // 进度数据永远走网络，不缓存
+            urlPattern: /^https:\/\/api\.github\.com\/.*/i,
             handler: "NetworkOnly",
           },
         ],
@@ -55,7 +55,6 @@ export default defineConfig(({ command }) => ({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes("node_modules/@supabase")) return "supabase";
           if (id.includes("node_modules/vue")) return "vue";
         },
       },

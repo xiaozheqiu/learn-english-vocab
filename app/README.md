@@ -28,69 +28,67 @@ npm run build    # 产物在 app/dist
 推送 `main` 会触发 `.github/workflows/deploy.yml`：`npm ci` → `npm run build` →
 发布到 GitHub Pages。要改发布内容，改 `app/` 就够了，不需要往仓库根目录拷产物。
 
-## 接入 Supabase（必做，否则页面进不去）
+构建**不需要任何密钥**（同步用的 token 是使用者运行时粘贴的，见下）。
 
-页面是**硬门槛**：没登录只显示登录页，词表一个字都不渲染，数据文件也不会被请求。
-所以下面三步必须先做完，站点才能用。
+## 使用方式
 
-**1. 建项目 + 建表**
+打开页面就能直接用：词表和勾选都正常工作，进度存在本机浏览器里（`localStorage`
+的 `ox5000-mastered-v1`），**没有登录门槛**。
 
-在 <https://supabase.com> 新建一个免费项目，然后打开 SQL Editor，
-把 `supabase/schema.sql` 整段粘进去执行。它会建 `public.ox_progress` 表
-（主键 `(user_id, key)`）并打开 RLS，保证任何人只能读写自己的进度。
+想要多端同步，在右上角的同步面板里**粘一次 GitHub token**，之后自动同步。
+每台设备各粘一次（只存那台设备的 `localStorage`）。
 
-**2. 建你的账号**
+### token 怎么拿
 
-Authentication → Users → Add user，填邮箱和密码。
-本项目按「只有我自己用」设计，页面上**没有注册入口**，账号在后台手工建。
+1. 打开 <https://github.com/settings/tokens/new?scopes=gist>
+2. **把其它权限全部取消，只留 `gist`**——这样即使泄露，别人也只能动 gist
+3. 选 Classic token（细粒度 token 对 gist 支持不全）
+4. 生成后复制，粘进同步面板
 
-**3. 把地址和 anon key 交给构建**
+> token 只存在浏览器 `localStorage`，**绝不进代码、不进构建产物**。
+> 把 PAT 推进公开仓库或公开 gist 会被 GitHub 自动吊销，所以只能用运行时粘贴。
 
-Settings → API 里能拿到 `Project URL` 和 `anon public` key，然后二选一：
+### 进度存在哪
 
-- **线上**：仓库 Settings → Secrets and variables → Actions → New repository secret，
-  建 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_ANON_KEY`，再重新跑一次部署。
-  这两个值是**编译时**注入的，所以配完必须重新构建，光刷新页面没用。
-- **本地**：在 `app/` 下建 `.env.local`（已被 gitignore）：
+第一次连接时，应用会在你自己的账号下**自动建一个 secret gist**
+（文件 `ox5000-progress.json`），之后就一直读写它。gist id 缓存在本机
+`localStorage`（`ox5000-gist-id-v1`），找不到就自动重新搜索/新建。
+面板里点「查看我的记录」能直接打开它。
 
-  ```
-  VITE_SUPABASE_URL=https://xxxx.supabase.co
-  VITE_SUPABASE_ANON_KEY=eyJhbGciOi...
-  ```
+选 gist 而不是数据库的原因：不用另建账号、不用建表写 SQL、不会因为闲置被暂停，
+数据在自己账号里且有完整版本历史，写坏能回滚。
 
-> anon key 是设计上要暴露给浏览器的公开键，真正的边界是 RLS 策略。
-> 但 `service_role` key 绝对不能进前端，也不要提交进仓库。
-
-### 这个门槛能挡到什么
-
-站点是公开的 GitHub Pages，构建产物任何人都能下载，所以**登录门只能挡住
-顺手点进来的人，挡不住真想拿数据的人**。要更强的话，得把词表数据本身也
-搬进 Supabase 走 RLS，现在是纯前端校验登录态。
-
-## 登录与离线
+## 离线与容错
 
 | 场景 | 行为 |
 | --- | --- |
-| 没登录 | 只渲染登录页；不请求词表数据 |
-| 刷新 / 重开 PWA | 读本机会话直接进去，**不校验 token**（校验要联网，会把离线用户挡在门外） |
+| 没粘 token | 照常使用，进度只存本机 |
+| 刷新 / 重开 PWA | 读本机的 token 直接连上，**不校验有效性**（校验要联网，会把离线用户挡在门外） |
 | 断网启动 | 词表照常显示（数据随包发布）；勾选照常可用 |
 | 断网时勾选 | 先落本机，恢复网络后自动补推 |
-| 同步超时 | 8 秒后状态栏显示「同步失败」，但不影响继续浏览和勾选 |
+| 同步超时 | 12 秒后显示「同步失败」，但不影响继续浏览和勾选 |
+| 切回前台 | 自动对齐一次（拉取 + 推送） |
 
 ## 同步是怎么合的
 
-本机 `localStorage` 始终是离线真相，登录 / 切回前台时跟云端对齐一次：
+本机 `localStorage` 始终是离线真相，连接后 / 切回前台时跟 gist 对齐一次：
 
 | 本机状态 | 处理 |
 | --- | --- |
-| 这台设备第一次登这个账号 | 取并集再推上去（未登录时攒的进度、以及旧版页面带过来的进度都不能丢） |
+| 这台设备第一次连这个账号 | 取并集再推上去（没连时攒的进度、以及旧版页面带过来的进度都不能丢） |
 | 同步过，且没有未同步的改动 | 以云端为准（别的设备上的「取消勾选」能带过来） |
 | 同步过，但有未同步的改动 | 取并集，再推上去（绝不丢掉刚勾的进度） |
 
-第一行是必须的：如果一上来就「以云端为准」，离线攒的进度会在首次登录时
-被空云端直接清掉。
+第一行是必须的：如果一上来就「以云端为准」，本地攒的进度会在首次连接时被清掉。
 
-勾选 / 取消之后本地立刻落盘，1.2 秒防抖推一次云端；取消勾选会真的 `delete` 云端那一行。
+这里有个容易写错的地方：**只有「这份记录还没被任何设备写过」才算空**（gist 刚自动
+创建出来、或者文件里没内容）。一旦云端被另一台设备真的清空（手机上全部取消勾选），
+那就是明确的意思表示，必须照样按「以云端为准」执行，否则取消永远同步不过来。
+所以代码里用 `pull()` 返回的 `created` 标记来区分，而不是看 `keys.length`。
+
+勾选 / 取消之后本地立刻落盘，1.2 秒防抖推一次。gist 的 PATCH 不支持
+`If-Match`（实测返回 400），所以写入后**读回来核对**；万一另一台设备刚好也写了，
+就把它的新增并进来再写一次，三次仍冲突才报错。
 
 词条的键规则是 `等级\|单词\|词性[|序号]`，和旧版单文件页面完全一致，
 所以老用户本地已有的勾选进度不用做迁移。
@@ -101,16 +99,15 @@ Settings → API 里能拿到 `Project URL` 和 `anon public` key，然后二选
 app/
   index.html              外壳
   src/
-    App.vue               登录门 + 页面骨架 + 筛选/分页/同步编排
+    App.vue               页面骨架 + 筛选/分页/同步编排
     components/
-      LoginScreen.vue     登录页（未配数据库时显示配置步骤）
+      SyncPanel.vue       右上角同步设置（粘 token、显示状态、断开）
       WordTable.vue       词表：桌面是表格，窄屏自动变成卡片
       Pager.vue           页脚分页器
     lib/
       data.js             数据加载 + 词条键生成
-      sync.js             与 Supabase 双向对齐
-      supabase.js         客户端；没配环境变量时为 null
+      github.js           gist CRUD + token 存取
+      sync.js             本机进度真相 + 跟 gist 双向对齐
     styles.css            窄屏卡片样式在文件末尾的 @media (max-width: 820px) 里
   scripts/build-data.mjs  ../data/*.js → src/data/*.json
-  supabase/schema.sql     建表 + RLS
 ```

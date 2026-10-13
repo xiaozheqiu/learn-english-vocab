@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # vite 8 / supabase-js 都要求 Node >= 22
+          # vite 8 要求 Node >= 22
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
@@ -34,12 +34,10 @@ jobs:
       - name: Install
         run: npm ci
 
+      # 进度同步走 GitHub gist：token 由使用者在页面上粘贴、只存在本机，
+      # 构建时不需要任何密钥。
       - name: Build
         run: npm run build
-        env:
-          # 未配置时为空串，页面自动退化成「仅本机」模式
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - uses: actions/configure-pages@v5
 
