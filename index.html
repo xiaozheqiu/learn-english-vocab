@@ -14,6 +14,14 @@
     />
     <meta name="theme-color" content="#1d9e75" />
     <link rel="manifest" href="manifest.webmanifest" />
+    <script>
+      // file:// 打开时 origin 为 null，浏览器读取 manifest 会被 CORS 拦掉并报错。
+      // manifest 只在 http(s) 下有意义（安装到桌面、离线缓存），本地双击时直接不挂。
+      if (location.protocol === "file:") {
+        const lm = document.querySelector('link[rel="manifest"]');
+        if (lm) lm.remove();
+      }
+    </script>
     <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
