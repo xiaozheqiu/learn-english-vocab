@@ -47,7 +47,7 @@ const transUrl = (w) =>
         <td class="cn">
           {{ d.cn }}<span v-if="d.sn" class="sn">（{{ d.sn }}）</span>
         </td>
-        <td>
+        <td class="swcell">
           <label class="sw">
             <input
               type="checkbox"

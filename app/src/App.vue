@@ -14,11 +14,11 @@ import {
   markDirty,
   syncOnLogin,
   syncChanges,
-  currentUser,
-  signedIn,
+  restoreSession,
+  signOut,
 } from "./lib/sync.js";
 import { supabase, supabaseReady } from "./lib/supabase.js";
-import AuthPanel from "./components/AuthPanel.vue";
+import LoginScreen from "./components/LoginScreen.vue";
 import Pager from "./components/Pager.vue";
 import WordTable from "./components/WordTable.vue";
 
@@ -53,7 +53,8 @@ function saveView() {
 
 /* ---------- 数据 ---------- */
 const STORE = ref({}); // { A1: [...], ... }
-const loading = ref(true);
+// 初始不显示加载条：登录前不发数据请求，登录后由 bootData() 接管
+const loading = ref(false);
 const loadingMsg = ref("正在加载词表…");
 const loadPct = ref(0);
 const loadErr = ref("");
@@ -90,11 +91,20 @@ function persist() {
 }
 
 /* ---------- 同步 ---------- */
-const user = ref(null);
+const user = ref(null); // 没登录时为 null；模板据此决定是否放行
+const authChecked = ref(false); // 是否已经判定过登录态
 const syncState = ref("idle"); // idle | syncing | ok | error
 const syncErr = ref("");
 const lastSync = ref(null);
 let syncTimer = null;
+let dataBooted = false;
+
+function fmtTime(t) {
+  if (!t) return "";
+  const d = new Date(t);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 function scheduleSync() {
   if (!supabase || !user.value) return;
@@ -136,12 +146,6 @@ async function reconcile() {
     syncState.value = "error";
     syncErr.value = e.message || String(e);
   }
-}
-
-async function onAuthed(u) {
-  user.value = u;
-  if (!u) return;
-  await reconcile();
 }
 
 /* ---------- 筛选 ---------- */
@@ -248,27 +252,65 @@ function toTop() {
 
 /* ---------- 启动 ---------- */
 let unsub = null;
+
+// 词表数据只在登录后才加载：没登录连数据请求都不发出去
+async function bootData() {
+  if (dataBooted) return;
+  dataBooted = true;
+  loading.value = true;
+  try {
+    await ensure(kw.value ? "ALL" : lv.value);
+    loadErr.value = "";
+  } catch (e) {
+    loadErr.value = "加载失败：" + (e.message || e);
+    dataBooted = false;
+  }
+  loading.value = false;
+}
+
+async function onAuthed(u) {
+  user.value = u;
+  if (!u) return;
+  // 顺序很重要：词表数据是随包发布的本地产物，先渲染出来。
+  // 反过来先 await 同步的话，断网时那个请求会一直重试，
+  // 用户就只能对着空列表停在「同步中…」。
+  await bootData();
+  // 再跟云端对齐；失败只影响进度同步，不影响继续浏览。
+  await reconcile();
+}
+
+async function logout() {
+  await signOut();
+  user.value = null;
+  syncState.value = "idle";
+  syncErr.value = "";
+  lastSync.value = null;
+}
+
 onMounted(async () => {
   // 老版 iOS Safari 忽略 user-scalable=no，用 gesture 再兜一层
   ["gesturestart", "gesturechange", "gestureend"].forEach((t) => {
     document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
   });
 
-  try {
-    await ensure(kw.value ? "ALL" : lv.value);
-  } catch (e) {
-    loadErr.value = "加载失败：" + (e.message || e);
+  // 没有配置 Supabase：连登录都没法做，直接停在说明页，不发任何数据请求
+  if (!supabase) {
     loading.value = false;
+    authChecked.value = true;
     return;
   }
 
-  if (signedIn()) {
-    await onAuthed(await currentUser());
-    const { data } = supabase.auth.onAuthStateChange(async (_evt, session) => {
-      await onAuthed(session ? session.user : null);
-    });
-    unsub = () => data.subscription.unsubscribe();
-  }
+  // 先看本机有没有已存在的会话（刷新页面、PWA 重开、断网都走这里）。
+  // 不校验 token 有效性：那需要联网，断网时会把已登录的人挡在门外。
+  // 会话真失效时，下面第一次同步会报错，状态栏会显示"同步失败"。
+  const u = await restoreSession();
+  authChecked.value = true;
+  if (u) await onAuthed(u);
+
+  const { data } = supabase.auth.onAuthStateChange(async (_evt, session) => {
+    await onAuthed(session ? session.user : null);
+  });
+  unsub = () => data.subscription.unsubscribe();
 
   // 从别的设备同步过来的进度：回到前台时对齐一次（拉取 + 推送）
   document.addEventListener("visibilitychange", onVisible);
@@ -290,7 +332,32 @@ onUnmounted(() => {
 
 <template>
   <div id="loadbar" :class="{ off: !loading }" :style="{ width: loadPct + '%' }"></div>
-  <div class="wrap">
+
+  <!-- 还没判定完登录态：先给一个中性占位，避免登录页闪一下 -->
+  <div v-if="!authChecked && supabase" class="wrap">
+    <div class="empty">正在检查登录状态…</div>
+  </div>
+
+  <!-- 没登录（或没配数据库）：只给登录页，词表一个字都不渲染 -->
+  <LoginScreen
+    v-else-if="!user"
+    :ready="supabaseReady"
+    @signed-in="onAuthed"
+  />
+
+  <div v-else class="wrap">
+    <div class="topbar">
+      <span class="who">{{ user.email }}</span>
+      <span class="sstat" :class="syncState">
+        <template v-if="syncState === 'syncing'">同步中…</template>
+        <template v-else-if="syncState === 'error'">同步失败</template>
+        <template v-else-if="lastSync">已同步 {{ fmtTime(lastSync) }}</template>
+        <template v-else>已登录</template>
+      </span>
+      <button class="obtn" @click="logout">退出</button>
+    </div>
+    <div v-if="syncErr" class="serr">{{ syncErr }}</div>
+
     <div class="bar">
       <div class="tabs" id="tabs">
         <button
@@ -323,15 +390,7 @@ onUnmounted(() => {
       <div class="bar2"><i id="prog" :style="{ width: statPct + '%' }"></i></div>
     </div>
 
-    <!-- 没配置 Supabase 时整块不出现，页面退化成纯本机版 -->
-    <AuthPanel
-      v-if="supabaseReady"
-      :user="user"
-      :sync-state="syncState"
-      :sync-err="syncErr"
-      :last-sync="lastSync"
-      @signed-in="onAuthed"
-    />
+    <!-- 登录状态与同步状态现在移到顶部一行，见上面的 .topbar -->
 
     <div id="list">
       <div v-if="loadErr" class="empty">{{ loadErr }}</div>

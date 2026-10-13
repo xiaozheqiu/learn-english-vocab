@@ -28,10 +28,10 @@ npm run build    # 产物在 app/dist
 推送 `main` 会触发 `.github/workflows/deploy.yml`：`npm ci` → `npm run build` →
 发布到 GitHub Pages。要改发布内容，改 `app/` 就够了，不需要往仓库根目录拷产物。
 
-## 接入 Supabase（多端同步）
+## 接入 Supabase（必做，否则页面进不去）
 
-不配置也能用，只是退化成「仅本机」：登录入口整块不渲染，勾选照常存在
-`localStorage`。想开同步按下面三步走。
+页面是**硬门槛**：没登录只显示登录页，词表一个字都不渲染，数据文件也不会被请求。
+所以下面三步必须先做完，站点才能用。
 
 **1. 建项目 + 建表**
 
@@ -50,6 +50,7 @@ Settings → API 里能拿到 `Project URL` 和 `anon public` key，然后二选
 
 - **线上**：仓库 Settings → Secrets and variables → Actions → New repository secret，
   建 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_ANON_KEY`，再重新跑一次部署。
+  这两个值是**编译时**注入的，所以配完必须重新构建，光刷新页面没用。
 - **本地**：在 `app/` 下建 `.env.local`（已被 gitignore）：
 
   ```
@@ -60,14 +61,34 @@ Settings → API 里能拿到 `Project URL` 和 `anon public` key，然后二选
 > anon key 是设计上要暴露给浏览器的公开键，真正的边界是 RLS 策略。
 > 但 `service_role` key 绝对不能进前端，也不要提交进仓库。
 
+### 这个门槛能挡到什么
+
+站点是公开的 GitHub Pages，构建产物任何人都能下载，所以**登录门只能挡住
+顺手点进来的人，挡不住真想拿数据的人**。要更强的话，得把词表数据本身也
+搬进 Supabase 走 RLS，现在是纯前端校验登录态。
+
+## 登录与离线
+
+| 场景 | 行为 |
+| --- | --- |
+| 没登录 | 只渲染登录页；不请求词表数据 |
+| 刷新 / 重开 PWA | 读本机会话直接进去，**不校验 token**（校验要联网，会把离线用户挡在门外） |
+| 断网启动 | 词表照常显示（数据随包发布）；勾选照常可用 |
+| 断网时勾选 | 先落本机，恢复网络后自动补推 |
+| 同步超时 | 8 秒后状态栏显示「同步失败」，但不影响继续浏览和勾选 |
+
 ## 同步是怎么合的
 
 本机 `localStorage` 始终是离线真相，登录 / 切回前台时跟云端对齐一次：
 
 | 本机状态 | 处理 |
 | --- | --- |
-| 没有未同步的改动 | 以云端为准（别的设备上的「取消勾选」能带过来） |
-| 有未同步的改动 | 取并集，再推上去（绝不丢掉刚勾的进度） |
+| 这台设备第一次登这个账号 | 取并集再推上去（未登录时攒的进度、以及旧版页面带过来的进度都不能丢） |
+| 同步过，且没有未同步的改动 | 以云端为准（别的设备上的「取消勾选」能带过来） |
+| 同步过，但有未同步的改动 | 取并集，再推上去（绝不丢掉刚勾的进度） |
+
+第一行是必须的：如果一上来就「以云端为准」，离线攒的进度会在首次登录时
+被空云端直接清掉。
 
 勾选 / 取消之后本地立刻落盘，1.2 秒防抖推一次云端；取消勾选会真的 `delete` 云端那一行。
 
@@ -80,16 +101,16 @@ Settings → API 里能拿到 `Project URL` 和 `anon public` key，然后二选
 app/
   index.html              外壳
   src/
-    App.vue               页面骨架 + 筛选/分页/同步编排
+    App.vue               登录门 + 页面骨架 + 筛选/分页/同步编排
     components/
-      WordTable.vue       词表（含按端区分的查词链接）
+      LoginScreen.vue     登录页（未配数据库时显示配置步骤）
+      WordTable.vue       词表：桌面是表格，窄屏自动变成卡片
       Pager.vue           页脚分页器
-      AuthPanel.vue       登录 / 同步状态
     lib/
       data.js             数据加载 + 词条键生成
       sync.js             与 Supabase 双向对齐
       supabase.js         客户端；没配环境变量时为 null
-    styles.css
+    styles.css            窄屏卡片样式在文件末尾的 @media (max-width: 820px) 里
   scripts/build-data.mjs  ../data/*.js → src/data/*.json
   supabase/schema.sql     建表 + RLS
 ```
