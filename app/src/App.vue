@@ -118,13 +118,15 @@ async function doSync() {
   }
 }
 
-async function onAuthed(u) {
-  user.value = u;
-  if (!u) return;
+// 登录后 / 从后台切回来时做一次全量对齐：
+// 本机没有未同步的改动 → 以云端为准，别的设备上的「取消勾选」也能带过来；
+// 本机有未同步的改动   → 取并集再推上去，绝不丢掉刚勾的进度。
+async function reconcile() {
+  if (!supabase || !user.value) return;
   syncState.value = "syncing";
   syncErr.value = "";
   try {
-    const merged = await syncOnLogin(u.id);
+    const merged = await syncOnLogin(user.value.id);
     done.value = merged;
     prevDone = new Set(merged);
     saveLocal(merged);
@@ -134,6 +136,12 @@ async function onAuthed(u) {
     syncState.value = "error";
     syncErr.value = e.message || String(e);
   }
+}
+
+async function onAuthed(u) {
+  user.value = u;
+  if (!u) return;
+  await reconcile();
 }
 
 /* ---------- 筛选 ---------- */
@@ -262,13 +270,15 @@ onMounted(async () => {
     unsub = () => data.subscription.unsubscribe();
   }
 
-  // 从别的设备同步过来的进度：回到前台时拉一次
+  // 从别的设备同步过来的进度：回到前台时对齐一次（拉取 + 推送）
   document.addEventListener("visibilitychange", onVisible);
 });
 
 function onVisible() {
   if (document.visibilityState !== "visible") return;
-  if (supabase && user.value) doSync();
+  // 待发的推送会被这次对齐覆盖掉，先撤掉，避免两个请求互相打架
+  clearTimeout(syncTimer);
+  reconcile();
 }
 
 onUnmounted(() => {
