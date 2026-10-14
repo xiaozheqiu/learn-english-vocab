@@ -1,4 +1,4 @@
-import { BookOpen, ChevronLeft, ChevronRight } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -12,6 +12,7 @@ export default function Pager({
   onPage,
   onSize,
   onOpenGuide,
+  installPrompt,
 }) {
   const go = (next) => {
     const target = Math.min(
@@ -23,7 +24,7 @@ export default function Pager({
   };
   return (
     <nav
-      className="mt-4 flex justify-center rounded-xl border border-primary/20 bg-primary/[0.045] px-3 py-3 shadow-sm"
+      className="mt-4 flex justify-center rounded-xl border border-primary/20 bg-primary/[0.045] py-2 shadow-sm"
       aria-label="词表分页"
     >
       <div className="flex w-full flex-wrap items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -79,10 +80,25 @@ export default function Pager({
           variant="outline"
           size="sm"
           className="h-8"
+          aria-label="词性对照"
+          title="词性对照"
           onClick={onOpenGuide}
         >
           <BookOpen className="h-4 w-4" />
         </Button>
+        {installPrompt && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            aria-label="安装应用"
+            title="安装应用"
+            onClick={installPrompt}
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </nav>
   );

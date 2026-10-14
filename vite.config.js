@@ -15,6 +15,7 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      devOptions: { enabled: true, type: "module" },
       includeAssets: ["icons/favicon-32.png", "icons/apple-touch-icon.png"],
       manifest: {
         name: "Oxford 5000 词汇表",
