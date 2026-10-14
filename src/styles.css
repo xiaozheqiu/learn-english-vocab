@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root { --background: 214 36% 95%; --foreground: 222 47% 11%; --card: 0 0% 100%; --card-foreground: 222 47% 11%; --primary: 221 83% 53%; --primary-foreground: 0 0% 100%; --secondary: 214 32% 90%; --secondary-foreground: 222 47% 11%; --muted: 214 32% 90%; --muted-foreground: 215 16% 42%; --accent: 188 78% 91%; --accent-foreground: 197 80% 26%; --destructive: 0 72% 51%; --destructive-foreground: 0 0% 100%; --border: 214 28% 82%; --input: 214 25% 72%; --ring: 221 83% 53%; --radius: 0.75rem; }
+  * { @apply border-border; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { @apply m-0 min-w-[320px] bg-background font-sans antialiased; }
+  button, input, select { font: inherit; }
+}
+
+@layer utilities { input[type="search"]::-webkit-search-cancel-button { @apply cursor-pointer; } input[type="number"]::-webkit-inner-spin-button { margin: 0; } }

@@ -20,22 +20,20 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: app
+        working-directory: .
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          # vite 8 要求 Node >= 22
+          # Vite 7 requires Node >= 20
           node-version: 22
           cache: npm
-          cache-dependency-path: app/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install
         run: npm ci
 
-      # 进度同步走 GitHub gist：token 由使用者在页面上粘贴、只存在本机，
-      # 构建时不需要任何密钥。
       - name: Build
         run: npm run build
 
@@ -43,7 +41,7 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: app/dist
+          path: dist
 
   deploy:
     needs: build

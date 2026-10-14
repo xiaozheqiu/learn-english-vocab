@@ -6,9 +6,9 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const APP = path.resolve(HERE, "..");
-const SRC = path.resolve(APP, "..", "data"); // 词汇/learn-english-vocab-site/data
-const OUT = path.join(APP, "src", "data");
+const ROOT = path.resolve(HERE, ".."); // 项目根目录
+const SRC = path.join(ROOT, "data"); // 词汇数据源
+const OUT = path.join(ROOT, "src", "data"); // 输出目录
 
 const LEVELS = ["A1", "A2", "B1", "B2", "C1"];
 
