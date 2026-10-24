@@ -96,6 +96,11 @@ export interface BuildPlanInput {
  * 1. 取 due ≤ now 且未手动标记已掌握，按 R 升序（R 相同则逾期久的先）
  * 2. 再按每日新词额度补「从未评分」的新词
  * 3. 按单次题量截断
+ *
+ * 为什么「新词」要有一个每日上限而不是能学多少学多少：
+ * 已学词都会按 FSRS 排队，今天多学的每一个都会变成未来几周的复习量。
+ * 所以上限保护的是「未来的自己」，不是替用户定节奏 —— 它随时可调，
+ * 想多学就把额度调高，用户自己决定透支多少。
  */
 export function buildReviewPlan(input: BuildPlanInput): ReviewPlan {
   const now = input.now ?? new Date();

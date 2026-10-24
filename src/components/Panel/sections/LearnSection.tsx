@@ -52,10 +52,6 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
     if (next !== prefs.retention) onPrefsChange({ retention: next });
   };
 
-  // 按当前速度覆盖剩余词量需要的天数
-  const remaining = Math.max(0, SPRINT_TARGET - stats.masteredInCooldown);
-  const daysLeft = Math.ceil(remaining / Math.max(1, prefs.newPerDay));
-
   const forecastMax = Math.max(1, ...stats.forecast.map((item) => item.count));
   const forecastTotal = stats.forecast.reduce((sum, item) => sum + item.count, 0);
 
@@ -75,15 +71,15 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
       </section>
 
       {/*
-        全库进度。
-        不做成硬性的「90 天冲刺」：新词上限允许 20–80，对应 267 天到 67 天，
-        具体多久由用户自己定。这里只如实换算「按当前速度还要多少天」，
-        不制造一个每天都迟到的目标。
+        全库掌握度。
+        只陈述事实：已掌握多少、总共多少、今天还能学几个。
+        不换算「还要多少天」—— 学习节奏本就该由每天的状态决定，
+        给一个倒计时等于替用户预设了一个他并没有承诺的截止日期。
       */}
-      <section aria-labelledby="sprint-title" className="rounded-card border border-line bg-paper/60 px-3 py-2.5">
+      <section aria-labelledby="coverage-title" className="rounded-card border border-line bg-paper/60 px-3 py-2.5">
         <div className="flex items-baseline justify-between gap-2">
-          <h3 id="sprint-title" className="text-[13px] font-medium text-ink">
-            全库进度
+          <h3 id="coverage-title" className="text-[13px] font-medium text-ink">
+            全库掌握度
           </h3>
           <span className="text-[12px] font-medium text-brand-ink tnum">
             {Math.round((stats.masteredInCooldown / SPRINT_TARGET) * 100)}%
@@ -91,17 +87,16 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
         </div>
         <Progress
           value={(stats.masteredInCooldown / SPRINT_TARGET) * 100}
-          label="全库掌握进度"
+          label="全库掌握度"
           className="mt-1.5"
         />
         <p className="mt-1.5 text-[12px] leading-5 text-ink-mute tnum">
-          已掌握 {stats.masteredInCooldown} / {SPRINT_TARGET} 个 · 每日 {prefs.newPerDay} 个新词，
-          剩余约 {daysLeft} 天
+          已掌握 {stats.masteredInCooldown} / {SPRINT_TARGET} 个 · 已学 {stats.learned} 个
         </p>
       </section>
 
       <p className="text-[12px] text-ink-mute tnum">
-        已学 {stats.learned} 个 · 全库平均留存率 R {percent(stats.averageRetrievability)}
+        全库平均留存率 R {percent(stats.averageRetrievability)}
       </p>
 
       {/* 7 天到期预测 */}
@@ -176,7 +171,8 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
           onBlur={commitNewPerDay}
         />
         <p id="pref-new-per-day-hint" className="text-[12px] leading-5 text-ink-mute tnum">
-          今日已学新词 {stats.newToday} 个 · 全库 {SPRINT_TARGET} 词按这个速度约 {daysLeft} 天覆盖完
+          今日已学 {stats.newToday} 个，剩余额度 {Math.max(0, prefs.newPerDay - stats.newToday)} 个。
+          每天学几个都行，随时可以改。
         </p>
       </section>
 

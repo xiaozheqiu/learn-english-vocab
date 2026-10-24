@@ -18,6 +18,8 @@ export interface ReviewDoneProps {
   summary: ReviewSummary;
   /** 本轮装不下、留到明天的到期卡数 */
   carryOver?: number;
+  /** 今日新词额度是否已用完（由外层按当前库内计数判断，不用建队时的快照） */
+  quotaExhausted?: boolean;
   onAgain: () => void;
   onGoQuiz: () => void;
   onExit: () => void;
@@ -43,7 +45,14 @@ const TONE = {
  * 结束页（§5 F2）：本次统计 + 三个出口。
  * 统计用 `<dl>` 而不是纯视觉排版，读屏能念出「复习 12 张」这样的成对信息。
  */
-export function ReviewDone({ summary, carryOver = 0, onAgain, onGoQuiz, onExit }: ReviewDoneProps) {
+export function ReviewDone({
+  summary,
+  carryOver = 0,
+  quotaExhausted = false,
+  onAgain,
+  onGoQuiz,
+  onExit,
+}: ReviewDoneProps) {
   const { reviewed, byGrade, durationMs } = summary;
   const correct = byGrade[3] + byGrade[4];
   const accuracy = reviewed > 0 ? correct / reviewed : 0;
@@ -100,6 +109,15 @@ export function ReviewDone({ summary, carryOver = 0, onAgain, onGoQuiz, onExit }
         {carryOver > 0 && (
           <p className="mt-3 rounded-btn border border-due/30 bg-due-wash px-2.5 py-1.5 text-[12px] leading-5 text-due tnum">
             今天还有 {carryOver} 张到期卡没做，明天会一起排上。
+          </p>
+        )}
+        {/*
+          新词额度用完时给一个明确出口：想继续学就去调高上限，
+          而不是让「再来一轮」抽出一套空队列让人困惑。
+        */}
+        {carryOver === 0 && quotaExhausted && (
+          <p className="mt-3 rounded-btn border border-line bg-paper px-2.5 py-1.5 text-[12px] leading-5 text-ink-soft">
+            今天的到期卡和新词都做完了。想再多学几个，去浮窗「学习」把每日新词上限调高即可。
           </p>
         )}
 

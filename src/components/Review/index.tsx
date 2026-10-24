@@ -59,7 +59,11 @@ export function ReviewPage({ store, onExit, onGoQuiz }: ReviewPageProps) {
     setState({
       status: "ready",
       items: plan.items,
-      meta: { dueTotal: plan.dueTotal, carryOver: plan.carryOver, limit: plan.limit },
+      meta: {
+        dueTotal: plan.dueTotal,
+        carryOver: plan.carryOver,
+        limit: plan.limit,
+      },
     });
   }, [ready, loadingWords, round]);
 

@@ -53,6 +53,18 @@ export function ReviewSession(props: ReviewSessionProps) {
 }
 
 function ReviewRunner({ items: initialItems, plan, store, onAgain, onGoQuiz, onExit }: ReviewSessionProps) {
+  /*
+   * 额度是否用完要看**现在**的库，不能用建队时的快照：
+   * 快照是在进入复习那一刻算的，做完一轮后它早就过期了。
+   */
+  const quotaExhausted = useMemo(() => {
+    const learnedToday = store.days.get(dayKey())?.newWords ?? 0;
+    const unlearned = store.words.some(
+      (w) => !store.records.has(w.key) && !store.mastered.has(w.key),
+    );
+    return unlearned && learnedToday >= store.prefs.newPerDay;
+  }, [store.days, store.mastered, store.prefs.newPerDay, store.records, store.words]);
+
   // 已提交的评分栈：长度即进度指针；撤销只弹栈，进度与统计自动回退
   const [steps, setSteps] = useState<Step[]>([]);
   /**
@@ -221,6 +233,7 @@ function ReviewRunner({ items: initialItems, plan, store, onAgain, onGoQuiz, onE
       <ReviewDone
         summary={finished}
         carryOver={plan?.carryOver ?? 0}
+        quotaExhausted={quotaExhausted}
         onAgain={onAgain}
         onGoQuiz={onGoQuiz}
         onExit={onExit}
@@ -327,14 +340,30 @@ function ReviewEmpty({
   const { words, records, mastered } = store;
   const nextDue = useMemo(() => nextDueAt(words, records, mastered), [words, records, mastered]);
 
+  /*
+   * 空队列有两种成因，文案必须分开：
+   * - 到期卡做完了，但今天的**新词额度**也用完了（库里还有没学的词）
+   * - 真的没东西可排了
+   * 混成一句「今天已清空」会让人以为全学完了。
+   */
+  const unlearned = useMemo(
+    () => words.filter((w) => !records.has(w.key) && !mastered.has(w.key)).length,
+    [mastered, records, words],
+  );
+  const quotaExhausted = unlearned > 0;
+
   return (
     <div className="mx-auto w-full max-w-[560px] px-4 py-8">
       <div className="rounded-card border border-line bg-card p-6 shadow-card">
-        <h1 className="text-[20px] font-semibold leading-[1.3] text-ink">今天已清空</h1>
+        <h1 className="text-[20px] font-semibold leading-[1.3] text-ink">
+          {quotaExhausted ? "今天的额度用完了" : "今天已清空"}
+        </h1>
         <p className="mt-1.5 text-[13px] leading-[1.65] text-ink-soft">
-          {nextDue === null
-            ? "还没有排期的卡片。去词表挑一些词开始学，或者先做一轮测试。"
-            : `下一张到期：${formatInterval(new Date(nextDue))}。今天可以先做点别的。`}
+          {quotaExhausted
+            ? `还有 ${unlearned} 个词没学过。想今天继续，去浮窗「学习」把每日新词上限调高即可；不改也没关系，明天会接着从这个位置继续。`
+            : nextDue === null
+              ? "还没有排期的卡片。去词表挑一些词开始学，或者先做一轮测试。"
+              : `下一张到期：${formatInterval(new Date(nextDue))}。今天可以先做点别的。`}
         </p>
         <div className="mt-5 flex flex-col gap-2 sm:flex-row">
           <Button size="touch" className="sm:flex-1" onClick={onGoQuiz}>

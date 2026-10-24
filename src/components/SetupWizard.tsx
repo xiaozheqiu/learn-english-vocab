@@ -2,13 +2,7 @@ import { useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  LEVELS,
-  NEW_PER_DAY_MAX,
-  NEW_PER_DAY_MIN,
-  NEW_PER_DAY_STEP,
-  type LevelFilter,
-} from "@/lib/types";
+import { LEVELS, NEW_PER_DAY_MIN, type LevelFilter } from "@/lib/types";
 import { explainPinError, isValidPin, PIN_MAX, PIN_MIN } from "@/lib/lock";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +32,6 @@ export function SetupWizard({ onDone }: SetupWizardProps) {
   const [skipPin, setSkipPin] = useState(false);
   const [remember, setRemember] = useState(true);
   const [level, setLevel] = useState<LevelFilter>("A1");
-  const [newPerDay, setNewPerDay] = useState(NEW_PER_DAY_MIN);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -66,7 +59,8 @@ export function SetupWizard({ onDone }: SetupWizardProps) {
         pin: skipPin ? null : pin,
         remember: remember && !skipPin,
         level,
-        newPerDay,
+        // 首次设置不再询问每日新词量，交给偏好默认值
+        newPerDay: NEW_PER_DAY_MIN,
       });
     } catch (err) {
       setError(explainPinError(err));
@@ -186,26 +180,15 @@ export function SetupWizard({ onDone }: SetupWizardProps) {
               </p>
             </fieldset>
 
-            <div>
-              <label htmlFor="setup-new" className="text-[13px] font-medium text-ink">
-                每日新词上限
-              </label>
-              <div className="mt-2 flex items-center gap-3">
-                <input
-                  id="setup-new"
-                  type="range"
-                  min={NEW_PER_DAY_MIN}
-                  max={NEW_PER_DAY_MAX}
-                  step={NEW_PER_DAY_STEP}
-                  value={newPerDay}
-                  onChange={(event) => setNewPerDay(Number(event.target.value))}
-                  className="h-11 flex-1 accent-[var(--brand)]"
-                />
-                <span className="w-14 text-right text-sm font-medium tnum text-ink">
-                  {newPerDay} 个
-                </span>
-              </div>
-            </div>
+            {/*
+              首次设置里不问「每天学几个新词」。
+              设一个还没开始就定下的数字，等于替用户预设节奏；默认值起步，
+              之后在浮窗里随时按当天状态改就是。
+            */}
+            <p className="rounded-btn border border-line bg-paper px-3 py-2.5 text-[12px] leading-5 text-ink-soft">
+              每天学几个新词不用现在定：初始取 {NEW_PER_DAY_MIN} 个，
+              之后在浮窗「学习」里随时改，学多学少都不影响已学词的复习安排。
+            </p>
           </div>
         )}
 
