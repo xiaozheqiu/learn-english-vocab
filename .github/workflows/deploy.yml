@@ -31,9 +31,14 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      # 注意：不能加 --omit=optional。
+      # vite 8 的 bundler（rolldown）原生二进制就在 optionalDependencies 里，
+      # 跳过 optional 会直接构建失败（实测报 Cannot find native binding）。
+      # 测试（vitest / e2e）一律在本地跑，CI 只负责「能构建、能部署」。
       - name: Install
         run: npm ci
 
+      # 构建内含 tsc --noEmit：类型错误会让部署失败，这是唯一保留的质量闸门
       - name: Build
         run: npm run build
 

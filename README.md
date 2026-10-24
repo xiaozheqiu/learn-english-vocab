@@ -30,6 +30,23 @@ npm run test:e2e     # 浏览器回归（Playwright，两个套件 53 项断言�
 npm run build        # data + typecheck + vite build（含 PWA）
 ```
 
+### 测试只在本地跑
+
+CI（`.github/workflows/deploy.yml`）**只做构建和部署**，不跑任何测试：
+
+```
+npm ci → npm run build（含 tsc --noEmit）→ 上传 dist → 部署 Pages
+```
+
+实测全程约 36 秒。「类型错误会让部署失败」是唯一保留的质量闸门——它本来就是
+`vite build` 前的一道防线，不是额外的测试步骤。
+
+vitest（98 个）和 e2e（53 项）都留在本地，提交前自己跑。理由很直接：
+CI 每次跑都要重新装依赖、下 Chromium，几十秒换来的信息在本地一次 `npm run test:e2e` 就有。
+
+**不要给 CI 加 `--omit=optional`**：vite 8 的 bundler（rolldown）原生二进制
+就在 `optionalDependencies` 里，跳过它构建会直接失败（实测 `Cannot find native binding`）。
+
 ### 浏览器回归的两条硬规则
 
 `e2e/` 下的脚本不是为了「跑绿」，所以定了两条规则：

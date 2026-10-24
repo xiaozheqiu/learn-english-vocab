@@ -639,3 +639,17 @@ PWA 预缓存后只取一次。用 computedStyle 逐项确认 token 色值、圆
 顺带修了 `review.undoRestoresQueue` 的时序问题：
 `until` 拿到第一帧的值就返回，撤销还没生效时会误判为失败。
 改成先等「数值小于变化前」再读。
+
+### 第十五轮：CI 只做部署
+
+明确约定：**测试全部在本地，CI 不跑任何测试。**
+
+| 环境 | 跑什么 | 耗时 |
+|---|---|---|
+| 本地（提交前） | `typecheck` + `vitest`（98）+ `test:e2e`（53） | ~2 分钟 |
+| CI | `npm ci` → `npm run build`（含 tsc）→ 部署 | ~36 秒 |
+
+试过一个优化：把 playwright 移到 `optionalDependencies` 并用 `npm ci --omit=optional`
+让 CI 少装 18MB。**实测会直接构建失败** —— vite 8 的 bundler（rolldown）原生二进制
+也在 optional 里，跳过它报 `Cannot find native binding`。已回退，并在 workflow 里
+写明原因，避免以后有人再踩。
