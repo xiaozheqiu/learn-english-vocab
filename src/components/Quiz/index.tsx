@@ -205,6 +205,7 @@ export function QuizPage({
     return (
       <Shell>
         <EmptyCard
+          reason="no-quiz-types"
           title="没有启用任何题型"
           body="到浮窗「学习」分区勾选「英→中 / 中→英 / 拼写」中的至少一个，再回来测试。"
           action={
@@ -221,6 +222,7 @@ export function QuizPage({
     return (
       <Shell>
         <EmptyCard
+          reason="no-studied-words"
           title="还没有学过的词"
           body="测试只考已经学过的词（有复习记录或标记过已掌握）。先去复习几轮，再回来检验。"
           action={
@@ -237,6 +239,7 @@ export function QuizPage({
     return (
       <Shell>
         <EmptyCard
+          reason="pool-too-small"
           title={`学过的词只有 ${studiedCount} 个`}
           body={`四选一需要同一池子里的干扰项，至少 ${MIN_POOL} 个词才出得了题。再学几个词就有了。`}
           action={
@@ -253,6 +256,7 @@ export function QuizPage({
     return (
       <Shell>
         <EmptyCard
+          reason={run.only ? "no-questions-from-wrong" : "no-questions"}
           title={run.only ? "这批错题练完了" : "这一套没有可出的题"}
           body={
             run.only
@@ -505,7 +509,9 @@ function QuizRunner({
 
   return (
     <>
-      <Progress value={((index + 1) / total) * 100} label="测试进度" />
+      <div data-testid="quiz-question" data-index={index + 1} data-total={total}>
+        <Progress value={((index + 1) / total) * 100} label="测试进度" />
+      </div>
 
       <QuizCard question={current} index={index + 1} total={total} />
 
@@ -613,13 +619,16 @@ function EmptyCard({
   title,
   body,
   action,
+  reason = "unknown",
 }: {
   title: string;
   body: string;
   action?: ReactNode;
+  /** 空态原因，供浏览器回归按结构断言（不依赖文案） */
+  reason?: string;
 }) {
   return (
-    <Card className="px-4 py-8 text-center">
+    <Card data-testid="quiz-empty" data-reason={reason} className="px-4 py-8 text-center">
       <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
       <p className="prose-measure mx-auto mt-2 text-[13px] leading-6 text-ink-soft">{body}</p>
       {action && <div className="mt-4 flex justify-center">{action}</div>}

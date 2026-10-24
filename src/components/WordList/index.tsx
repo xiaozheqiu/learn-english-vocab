@@ -226,6 +226,7 @@ export function WordListPage({
             ref={listRef}
             role="grid"
             aria-label="词表"
+            data-testid="word-grid"
             aria-rowcount={filtered.length}
             className="flex-1 bg-card"
           >

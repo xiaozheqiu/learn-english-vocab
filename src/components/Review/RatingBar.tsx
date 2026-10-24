@@ -33,6 +33,7 @@ export function RatingBar({ previews, onGrade, disabled = false }: RatingBarProp
           onClick={() => onGrade(preview.grade)}
           // 读屏拿到完整语义：评分名 + 下次间隔
           aria-label={`${preview.label}，${preview.text}后复习`}
+          data-grade={preview.grade}
           aria-keyshortcuts={String(preview.grade)}
           className={cn(
             "flex min-h-[56px] flex-col items-center justify-center gap-0.5 rounded-btn border px-1 py-2 transition-colors",

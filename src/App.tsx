@@ -60,7 +60,25 @@ function AppShell() {
 
   /* ── 路由 ──────────────────────────────────────────────────── */
   useEffect(() => {
-    const onHash = () => setRoute(parseRoute(window.location.hash));
+    /**
+     * hash 变化时更新路由，并把地址栏收敛到实际渲染的路由。
+     *
+     * 收敛要在这里做，不能只靠「route 变化 → effect」：
+     * 同一个路由的无效 hash（`#/nonsense` 与 `#/` 都解析成 list）
+     * 不会让 route 变化，effect 也就不跑，地址栏会一直留着无效值。
+     */
+    const onHash = () => {
+      const parsed = parseRoute(window.location.hash);
+      setRoute(parsed);
+      const canonical = routeHref(parsed);
+      if (window.location.hash && window.location.hash !== canonical) {
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${window.location.search}${canonical}`,
+        );
+      }
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -87,14 +105,34 @@ function AppShell() {
    * 但地址栏还留着旧值 —— 刷新一次又走一遍回落，分享出去的链接也不对。
    * 这里把 hash 与「实际渲染的路由」校正一致。
    */
-  useEffect(() => {
-    if (!lock.ready) return;
-    const current = parseRoute(window.location.hash);
+  /**
+   * 把地址栏收敛到「实际渲染的路由」。
+   *
+   * 必须在**首次渲染时同步跑一次**，不能只依赖 effect：
+   * 直接打开 `#/nonsense` 时 `parseRoute` 回落成 list，而 effect 的依赖
+   * （lock.ready / route）在后续渲染里都没变化，于是不会重跑 ——
+   * 表现为地址栏一直停在 `#/nonsense`。
+   *
+   * 用 replaceState 而不是 location.replace：后者会整页重载，
+   * 刷新场景下浏览器仍可能按旧 hash 初始化。
+   */
+  const canonicaliseHash = useCallback(() => {
+    const raw = window.location.hash;
     const canonical = routeHref(route);
-    if (window.location.hash && window.location.hash !== canonical && current === route) {
-      window.location.replace(`${window.location.pathname}${window.location.search}${canonical}`);
-    }
-  }, [lock.ready, route]);
+    if (!raw || raw === canonical) return;
+    if (parseRoute(raw) !== route) return;
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}${canonical}`,
+    );
+  }, [route]);
+
+  // 首次挂载后就收敛一次：不等 lock.ready —— 它只会让「直接打开无效 hash」
+  // 这种场景多挂一帧空档，而 route 在首帧就已经算好了
+  useEffect(() => {
+    canonicaliseHash();
+  }, [canonicaliseHash]);
 
   /*
    * 统计。

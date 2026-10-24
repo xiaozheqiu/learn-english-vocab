@@ -55,7 +55,7 @@ export function ReviewDone({
   const accuracy = reviewed > 0 ? correct / reviewed : 0;
 
   return (
-    <div className="mx-auto w-full max-w-[560px] px-4 py-6">
+    <div data-testid="review-done" data-reviewed={reviewed} className="mx-auto w-full max-w-[560px] px-4 py-6">
       <Card className="p-5 sm:p-6">
         <h2 className="text-[20px] font-semibold leading-[1.3] text-ink">这一轮结束</h2>
         <p className="mt-1 text-[13px] text-ink-soft">

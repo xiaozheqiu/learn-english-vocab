@@ -25,9 +25,40 @@ Vite 以 `host: true` 启动，终端会同时打印 Local 与 Network 地址，
 
 ```bash
 npm run typecheck    # tsc --noEmit
-npm run test         # vitest（算法层纯函数）
+npm run test         # vitest（算法层纯函数，98 个）
+npm run test:e2e     # 浏览器回归（Playwright，两个套件 53 项断言）
 npm run build        # data + typecheck + vite build（含 PWA）
 ```
+
+### 浏览器回归的两条硬规则
+
+`e2e/` 下的脚本不是为了「跑绿」，所以定了两条规则：
+
+1. **不为让流程跑通而绕过被测行为。**
+   如果某一步本该发生却没发生，就让它失败。绝不「帮它把前置条件补齐」。
+   曾经踩过：脚本发现测试页是空态时自动补了一轮复习再回来，
+   结果「零基础不出题」这条规则永远测不到，还掩盖了一个真 bug。
+
+2. **断言查结构，不查文案。**
+   查 `[role="row"][data-key]` 的数量、`aria-pressed`、`data-grade`、`data-testid`、
+   URL hash —— 不查「已掌握」「全库掌握度」这类会随文案调整而变的字符串。
+   文案改动不该让测试变红，行为改动才应该。
+
+为此 UI 上补了一批**语义钩子**（不是给样式用的）：
+
+| 钩子 | 位置 | 用途 |
+|---|---|---|
+| `data-testid="review-running"` + `data-done` / `data-total` | 复习会话 | 进度、补考后队列长度 |
+| `data-testid="review-done"` + `data-reviewed` | 复习结束页 | 本轮实际复习数 |
+| `data-testid="quiz-question"` + `data-index` / `data-total` | 测试答题 | 题号与总题数 |
+| `data-testid="quiz-empty"` + `data-reason` | 测试空态 | 区分「没学过」「池子太小」「无题型」 |
+| `data-grade="1..4"` | 评分按钮 | 避免依赖可访问名称 |
+| `data-testid="filter-trigger" / filter-mode / filter-done / filter-reset` | 筛选 | 抽屉交互 |
+| `data-testid="bulk-fab" / bulk-mark / bulk-unmark` | 批量 | 浮动按钮与动作 |
+| `data-row-index` | 词表行 | 分页跳转后的序号校验 |
+
+断言全部落在**行为**上：队列长度变化、`aria-pressed` 翻转、抽屉是否关闭、
+题面单词是否在已学集合里、hash 是否被纠正。
 
 ## 页面
 

@@ -68,7 +68,13 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
         不换算「还要多少天」—— 学习节奏本就该由每天的状态决定，
         给一个倒计时等于替用户预设了一个他并没有承诺的截止日期。
       */}
-      <section aria-labelledby="coverage-title" className="rounded-card border border-line bg-paper/60 px-3 py-2.5">
+      <section
+        data-testid="coverage-card"
+        data-mastered={stats.masteredInCooldown}
+        data-total-words={SPRINT_TARGET}
+        aria-labelledby="coverage-title"
+        className="rounded-card border border-line bg-paper/60 px-3 py-2.5"
+      >
         <div className="flex items-baseline justify-between gap-2">
           <h3 id="coverage-title" className="text-[13px] font-medium text-ink">
             全库掌握度
@@ -150,6 +156,7 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
       <section>
         <h3 className="text-[13px] font-medium text-ink">单轮复习题量</h3>
         <div
+          data-testid="review-size-group"
           className="mt-1.5 grid grid-cols-4 gap-1.5"
           role="group"
           aria-label="单轮复习题量"
@@ -171,6 +178,7 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
       <section>
         <h3 className="text-[13px] font-medium text-ink">单套测试题量</h3>
         <div
+          data-testid="quiz-size-group"
           className="mt-1.5 grid grid-cols-4 gap-1.5"
           role="group"
           aria-label="单套测试题量"
@@ -196,7 +204,12 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
       */}
       <section>
         <h3 className="text-[13px] font-medium text-ink">测试题型</h3>
-        <div className="mt-1.5 grid grid-cols-3 gap-1.5" role="group" aria-label="测试题型">
+        <div
+          data-testid="quiz-type-group"
+          className="mt-1.5 grid grid-cols-3 gap-1.5"
+          role="group"
+          aria-label="测试题型"
+        >
           {QUIZ_TYPES.map((type) => {
             const active = prefs.quizTypes.includes(type);
             const last = prefs.quizTypes.length === 1 && active;

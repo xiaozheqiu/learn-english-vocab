@@ -88,6 +88,7 @@ export function FilterBar({
       <div className="flex items-center gap-2 px-3 py-2.5">
         <Button
           ref={trigger}
+          data-testid="filter-trigger"
           variant="outline"
           size="sm"
           className={cn("h-9 shrink-0 gap-1.5", filtered && "border-brand/50 text-brand-ink")}
@@ -136,6 +137,7 @@ export function FilterBar({
 
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
+          data-testid="filter-sheet"
           side={isDesktop ? "center" : "bottom"}
           className={cn(isDesktop && "max-w-sm")}
         >
@@ -149,7 +151,12 @@ export function FilterBar({
               <h3 id="filter-level-title" className="text-[13px] font-medium text-ink">
                 等级
               </h3>
-              <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+              <div
+                data-testid="filter-level"
+                role="group"
+                aria-labelledby="filter-level-title"
+                className="mt-1.5 grid grid-cols-3 gap-1.5"
+              >
                 {[
                   ...LEVELS.map((item) => ({ value: item as LevelFilter, label: item })),
                   { value: "ALL" as LevelFilter, label: "全部" },
@@ -172,7 +179,12 @@ export function FilterBar({
               <h3 id="filter-mode-title" className="text-[13px] font-medium text-ink">
                 掌握状态
               </h3>
-              <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+              <div
+                data-testid="filter-mode"
+                role="group"
+                aria-labelledby="filter-mode-title"
+                className="mt-1.5 grid grid-cols-3 gap-1.5"
+              >
                 {MODES.map((item) => (
                   <Button
                     key={item.value}
@@ -192,7 +204,12 @@ export function FilterBar({
               <h3 id="filter-size-title" className="text-[13px] font-medium text-ink">
                 每页条数
               </h3>
-              <div className="mt-1.5 grid grid-cols-5 gap-1.5">
+              <div
+                data-testid="filter-size"
+                role="group"
+                aria-labelledby="filter-size-title"
+                className="mt-1.5 grid grid-cols-5 gap-1.5"
+              >
                 {PAGE_SIZES.map((size) => (
                   <Button
                     key={size}
@@ -210,6 +227,7 @@ export function FilterBar({
 
             <div className="mt-5 flex gap-2">
               <Button
+                data-testid="filter-reset"
                 size="touch"
                 variant="outline"
                 className="flex-1"
@@ -220,7 +238,12 @@ export function FilterBar({
               >
                 清空筛选
               </Button>
-              <Button size="touch" className="flex-1" onClick={() => setOpen(false)}>
+              <Button
+                data-testid="filter-done"
+                size="touch"
+                className="flex-1"
+                onClick={() => setOpen(false)}
+              >
                 完成
               </Button>
             </div>

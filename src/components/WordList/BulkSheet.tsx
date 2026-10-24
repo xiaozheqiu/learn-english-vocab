@@ -78,6 +78,7 @@ export function BulkSheet({
     <>
       <button
         ref={trigger}
+        data-testid="bulk-fab"
         type="button"
         aria-label={
           nothingSelected ? "批量操作" : `批量操作，已选 ${selectedCount} 条`
@@ -120,6 +121,7 @@ export function BulkSheet({
 
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
+          data-testid="bulk-sheet"
           side={isDesktop ? "center" : "bottom"}
           className={cn(isDesktop && "max-w-sm")}
         >
@@ -169,10 +171,16 @@ export function BulkSheet({
                 标记
               </h3>
               <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                <Button size="touch" disabled={nothingSelected} onClick={run(onMarkMastered)}>
+                <Button
+                  data-testid="bulk-mark"
+                  size="touch"
+                  disabled={nothingSelected}
+                  onClick={run(onMarkMastered)}
+                >
                   标记已掌握
                 </Button>
                 <Button
+                  data-testid="bulk-unmark"
                   size="touch"
                   variant="outline"
                   disabled={nothingSelected}

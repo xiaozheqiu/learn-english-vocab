@@ -85,7 +85,10 @@ export const WordRow = memo(function WordRow({
         />
       </span>
 
-      <span className="flex h-6 w-6 shrink-0 items-center justify-end text-[12px] tnum text-ink-mute">
+      <span
+        data-row-index={index}
+        className="flex h-6 w-6 shrink-0 items-center justify-end text-[12px] tnum text-ink-mute"
+      >
         {index}
       </span>
 

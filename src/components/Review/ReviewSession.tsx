@@ -235,7 +235,12 @@ function ReviewRunner({ items: initialItems, plan, store, onAgain, onGoQuiz, onE
   const percentDone = (done / total) * 100;
 
   return (
-    <div className="mx-auto w-full max-w-[560px] px-4 pb-6 pt-3">
+    <div
+      data-testid="review-running"
+      data-done={done}
+      data-total={total}
+      className="mx-auto w-full max-w-[560px] px-4 pb-6 pt-3"
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
           <h1 className="text-[20px] font-semibold leading-[1.3] text-ink">复习</h1>
@@ -335,7 +340,7 @@ function ReviewEmpty({
    * 混成一句「今天已清空」会让人以为全学完了。
    */
   return (
-    <div className="mx-auto w-full max-w-[560px] px-4 py-8">
+    <div data-testid="review-empty" className="mx-auto w-full max-w-[560px] px-4 py-8">
       <div className="rounded-card border border-line bg-card p-6 shadow-card">
         <h1 className="text-[20px] font-semibold leading-[1.3] text-ink">今天已清空</h1>
         <p className="mt-1.5 text-[13px] leading-[1.65] text-ink-soft">
