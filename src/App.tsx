@@ -82,6 +82,20 @@ function AppShell() {
     if (target !== route) navigate(target);
   }, [lock.lockEnabled, lock.ready, lock.setupDone, lock.unlocked, route]);
 
+  /**
+   * 地址栏对齐：未知 hash（`#/nonsense`）会被 parseRoute 回落成 list，
+   * 但地址栏还留着旧值 —— 刷新一次又走一遍回落，分享出去的链接也不对。
+   * 这里把 hash 与「实际渲染的路由」校正一致。
+   */
+  useEffect(() => {
+    if (!lock.ready) return;
+    const current = parseRoute(window.location.hash);
+    const canonical = routeHref(route);
+    if (window.location.hash && window.location.hash !== canonical && current === route) {
+      window.location.replace(`${window.location.pathname}${window.location.search}${canonical}`);
+    }
+  }, [lock.ready, route]);
+
   /*
    * 统计。
    *
