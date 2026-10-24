@@ -134,6 +134,15 @@ IndexedDB 库 `ox5000` v1，五个 store：
 
 隐私模式下打不开 IndexedDB 时降级为内存态，顶栏常驻提示「本次进度不会保存」。
 
+判定分两层（`src/lib/db.ts`）：
+
+- `isMemoryMode()` 同步检查，只能证明「没有 `indexedDB` 这个 API」。
+- `probeStorage()` 异步真写一次探针库，才能揭穿「API 在但 `open()` 抛」
+  —— Safari 无痕模式就是这种，同步检查会被骗过去，导致写入静默落内存、
+  界面却没有任何提示。store 初始化时跑一次，失败就把 `memoryMode` 置真。
+
+改这块时注意：只靠同步检查会静默丢数据，`db.test.ts` 里有对应的两条回归。
+
 ## 学习强度
 
 目标：**覆盖并掌握 A1–C1 全部 5323 条**，节奏由自己定。参数：
@@ -286,3 +295,43 @@ PBKDF2-SHA256（随机盐、100k 次迭代）存哈希，不存明文。哈希�
 
 构建产物在 `dist/`，推送 `main` 触发 `.github/workflows/deploy.yml` 发布到 GitHub Pages。
 PWA 预缓存由 `vite-plugin-pwa` 生成，装一次之后断网可用。
+
+### 版本更新
+
+`registerType` 是 **`prompt`**，不是 `autoUpdate`：新 SW 装好后停在 waiting，
+等页面决定何时接管。
+
+- **什么时候检查**：页面回到前台（`visibilitychange` / `focus`）时主动
+  `registration.update()`，30 秒内不重复发请求。这是 Web 里等价于小程序
+  `onShow` 的东西 —— PWA 没有自己的钩子。
+- **发现新版本**：弹窗让用户选「立即更新」或「稍后」。不做成自动刷新，
+  因为重载会中断正在做的题。稍后只在本次会话生效，新 SW 已下载好，
+  下次冷启动自然用上。
+- **`clientsClaim: true` 必须显式保留**：切到 `prompt` 后插件不再自动加它，
+  首次安装的新 SW 会停在 activated 却不接管页面（`controller === null`），
+  首次装完就断网会白屏。
+- **重载由我们自己做，不靠 workbox-window**：它的 `isUpdate` 在 `register()`
+  那一刻用 `Boolean(controller)` 固化，本次会话若是首次安装（打开时还没有
+  controller），之后任何接管都会被判成「非更新」，只发事件不重载 ——
+  表现为点了立即更新、新 SW 已 activated、页面还是旧的。见
+  `src/hooks/usePwaUpdate.ts`。
+
+回归：`npm run test:pwa`（从 `dist/` 自己造 A/B 两份夹具，起临时静态服务器，
+验证「前台检查 → 弹框 → 稍后不重载 → 立即更新后页面真的变新」）。
+需要先 `npm run build`。
+
+### 版本标识
+
+「关于」页的版本信息全部来自构建时注入（`vite.config.js` 的 `define`），
+不再手写：`__APP_VERSION__` / `__BUILD_SHA__` / `__BUILD_TIME__` / `__BUILD_FINGERPRINT__`。
+
+之前 `APP_VERSION` 是硬编码的 `"2.0.0"`，自 v2.0.0 之后 11 个提交都没动过，
+而 PWA 静默更新 —— 只看版本号无法判断手机上是不是最新版。现在：
+
+- `BUILD_SHA`：CI 里取 `GITHUB_SHA` 前 7 位（Actions 默认提供，无需改 workflow），
+  本地构建是 `dev`
+- `BUILD_TIME`：构建时刻，界面按本地时区显示到分钟
+- `BUILD_FINGERPRINT`：版本 + 提交 + 依赖内容的短哈希，同一提交重复构建稳定
+
+拿到手机后对着「关于」看 sha 和构建时间，与 GitHub 上最新提交比对即可确认。
+发版前记得把 `package.json` 的 `version` 递增，它同时供 manifest 与界面使用。

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AboutSection } from "./sections/AboutSection";
+import {
+  AboutSection,
+  APP_VERSION,
+  BUILD_FINGERPRINT,
+  BUILD_SHA,
+  formatBuildTime,
+} from "./sections/AboutSection";
 import { DataSection } from "./sections/DataSection";
 import { LearnSection } from "./sections/LearnSection";
 import { SettingsSection } from "./sections/SettingsSection";
@@ -114,8 +120,31 @@ describe("浮窗分区（§2.3）", () => {
 
   it("关于分区写明 PIN 的真实定位与版本号", () => {
     const html = render(createElement(AboutSection, { onOpenGuide: () => {} }));
-    expect(html).toContain("v2.0.0");
+    // 版本号来自构建时注入，不写死字面量 —— 否则每次发版都要改测试
+    expect(html).toContain(`v${APP_VERSION}`);
     expect(html).toContain("学习数据未加密；重置不会删除数据");
     expect(html).toContain("5323");
+  });
+
+  it("关于分区显示构建标识，便于确认是否拿到最新版", () => {
+    const html = render(createElement(AboutSection, { onOpenGuide: () => {} }));
+    // 提交 sha 与构建指纹都在，且不是空串
+    expect(html).toContain(`data-build-sha`);
+    expect(html).toContain(BUILD_SHA);
+    expect(html).toContain(BUILD_FINGERPRINT);
+    expect(BUILD_SHA.length).toBeGreaterThan(0);
+    expect(BUILD_FINGERPRINT.length).toBeGreaterThan(0);
+  });
+});
+
+describe("构建时间格式化", () => {
+  it("ISO 时间转成本地可读的到分钟格式", () => {
+    // 用带时区偏移的输入，避免测试机时区影响判定
+    const out = formatBuildTime("2026-10-24T13:45:18.000Z");
+    expect(out).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+  });
+
+  it("非法时间原样返回，不抛错", () => {
+    expect(formatBuildTime("not-a-date")).toBe("not-a-date");
   });
 });

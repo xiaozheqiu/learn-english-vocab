@@ -2,7 +2,7 @@
   "name": "oxford5000-app",
   "private": true,
   "type": "module",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "scripts": {
     "data": "node scripts/build-data.mjs",
     "predev": "lsof -ti:5173 | xargs kill -9 2>/dev/null || true",
