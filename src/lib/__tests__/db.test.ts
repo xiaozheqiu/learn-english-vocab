@@ -50,7 +50,6 @@ describe("默认值", () => {
     expect(DEFAULT_META.setupDone).toBe(false);
     expect(DEFAULT_META.pinHash).toBeNull();
     expect(DEFAULT_PREFS.pageSize).toBe(20);
-    expect(DEFAULT_PREFS.newPerDay).toBeGreaterThan(0);
     expect(DEFAULT_PREFS.retention).toBe(0.9);
   });
 
@@ -79,17 +78,12 @@ describe("偏好归一与迁移", () => {
     expect(normalizePrefs({ pageSize: 20, sessionSize: 400 }).reviewSize).toBe(500);
   });
 
-  it("新词上限被夹进 20–80（老库里的 15 抬到 20，超出的 120 收到 80）", () => {
-    // 低于下限：抬到 20（每天 20 个约 267 天覆盖全库，是可持续的下限）
-    expect(normalizePrefs({ pageSize: 20, newPerDay: 15 }).newPerDay).toBe(20);
-    expect(normalizePrefs({ pageSize: 20, newPerDay: 5 }).newPerDay).toBe(20);
-    // 高于上限：收到 80（120 个/天的复习量压不住）
-    expect(normalizePrefs({ pageSize: 20, newPerDay: 120 }).newPerDay).toBe(80);
-    expect(normalizePrefs({ pageSize: 20, newPerDay: 200 }).newPerDay).toBe(80);
-    // 区间内按步长取整
-    expect(normalizePrefs({ pageSize: 20, newPerDay: 75 }).newPerDay).toBe(80);
-    expect(normalizePrefs({ pageSize: 20, newPerDay: 34 }).newPerDay).toBe(30);
-    expect(normalizePrefs({ pageSize: 20, newPerDay: 60 }).newPerDay).toBe(60);
+  it("老库里的 newPerDay 字段被丢弃（新词不再有每日配额）", () => {
+    const prefs = normalizePrefs({ pageSize: 20, newPerDay: 60 });
+    expect("newPerDay" in prefs).toBe(false);
+    expect(prefs.pageSize).toBe(20);
+    // 其余字段照常保留
+    expect(prefs.reviewSize).toBe(300);
   });
 
   it("完全缺失或脏值时给全套默认", () => {
@@ -107,12 +101,11 @@ describe("偏好归一与迁移", () => {
 
   it("已经是新结构时原样保留", () => {
     const prefs = normalizePrefs({
-      pageSize: 50, defaultLevel: "B2", newPerDay: 70, reviewSize: 200, quizSize: 30,
+      pageSize: 50, defaultLevel: "B2", reviewSize: 200, quizSize: 30,
       retention: 0.92, autoLockMinutes: 0, quizTypes: ["spell"],
     });
     expect(prefs.reviewSize).toBe(200);
     expect(prefs.quizSize).toBe(30);
-    expect(prefs.newPerDay).toBe(70);
     expect(prefs.retention).toBe(0.92);
   });
 });

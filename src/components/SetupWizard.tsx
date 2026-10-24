@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LEVELS, NEW_PER_DAY_MIN, type LevelFilter } from "@/lib/types";
+import { LEVELS, type LevelFilter } from "@/lib/types";
 import { explainPinError, isValidPin, PIN_MAX, PIN_MIN } from "@/lib/lock";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +11,7 @@ export interface SetupWizardProps {
     pin: string | null;
     remember: boolean;
     level: LevelFilter;
-    newPerDay: number;
+
   }) => Promise<void>;
 }
 
@@ -59,8 +59,6 @@ export function SetupWizard({ onDone }: SetupWizardProps) {
         pin: skipPin ? null : pin,
         remember: remember && !skipPin,
         level,
-        // 首次设置不再询问每日新词量，交给偏好默认值
-        newPerDay: NEW_PER_DAY_MIN,
       });
     } catch (err) {
       setError(explainPinError(err));
@@ -180,14 +178,8 @@ export function SetupWizard({ onDone }: SetupWizardProps) {
               </p>
             </fieldset>
 
-            {/*
-              首次设置里不问「每天学几个新词」。
-              设一个还没开始就定下的数字，等于替用户预设节奏；默认值起步，
-              之后在浮窗里随时按当天状态改就是。
-            */}
             <p className="rounded-btn border border-line bg-paper px-3 py-2.5 text-[12px] leading-5 text-ink-soft">
-              每天学几个新词不用现在定：初始取 {NEW_PER_DAY_MIN} 个，
-              之后在浮窗「学习」里随时改，学多学少都不影响已学词的复习安排。
+              每天学几个不用现在定：复习时按当天的状态学就行，学多少算多少。
             </p>
           </div>
         )}

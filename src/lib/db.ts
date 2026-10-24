@@ -13,9 +13,6 @@ import {
   DEFAULT_QUIZ_SIZE,
   DEFAULT_REVIEW_SIZE,
   LEGACY_MASTERED_KEY,
-  NEW_PER_DAY_MAX,
-  NEW_PER_DAY_MIN,
-  NEW_PER_DAY_STEP,
   PAGE_SIZES,
   QUIZ_SIZES,
   REVIEW_SIZES,
@@ -194,11 +191,8 @@ export function normalizePrefs(value: unknown): Prefs {
   merged.reviewSize = clampSize(merged.reviewSize, REVIEW_SIZES, DEFAULT_REVIEW_SIZE);
   // 每页条数上限从 500 收到 200：老库里存 500 会落到一个不存在的选项上
   merged.pageSize = clampPageSize(merged.pageSize);
-  // 新词区间是 20–80：老库里 15 这类值抬到下限，120 收到上限
-  merged.newPerDay = Math.min(
-    NEW_PER_DAY_MAX,
-    Math.max(NEW_PER_DAY_MIN, Math.round(merged.newPerDay / NEW_PER_DAY_STEP) * NEW_PER_DAY_STEP),
-  );
+  // 老库里的 newPerDay 字段直接丢弃：新词不再有每日配额，字段已从 Prefs 移除
+  delete (merged as { newPerDay?: unknown }).newPerDay;
   return merged;
 }
 

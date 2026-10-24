@@ -174,13 +174,9 @@ function AppShell() {
       pin: string | null;
       remember: boolean;
       level: Parameters<typeof store.setPrefs>[0]["defaultLevel"];
-      newPerDay: number;
     }) => {
       await lock.completeSetup({ pin: options.pin, remember: options.remember });
-      await store.setPrefs({
-        defaultLevel: options.level ?? "A1",
-        newPerDay: options.newPerDay ?? 15,
-      });
+      await store.setPrefs({ defaultLevel: options.level ?? "A1" });
       navigate("list");
     },
     [lock, store],

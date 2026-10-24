@@ -74,18 +74,24 @@ export function QuizPage({
     const { words, records, prefs } = inputs.current;
     const types = normalizeTypes(prefs.quizTypes);
     const seed = Date.now().toString();
-    const size = Math.max(1, Math.min(prefs.quizSize, words.length));
+    /*
+     * 出题池 = 学过的词（有 FSRS 记录或标记过已掌握）。
+     * 之前直接用全库，结果一个词都没学过也能抽 50 道题考你 ——
+     * 测试的意义是对已学内容做检索练习，不该拿没见过的词当题目。
+     */
+    const studied = words.filter((w) => records.has(w.key));
+    const size = Math.max(1, Math.min(prefs.quizSize, studied.length));
     const limited = only && only.length > 0 ? [...only] : null;
     return {
       seed,
       only: limited,
       questions: buildQuiz({
-        words,
+        words: studied,
         records,
         seed,
         size,
         types,
-        // 干扰项用全量池子，才有同等级 / 同词性的选项
+        // 干扰项仍用全量池：同等级/同词性的选项更真实，也更难蒙
         pool: words,
         ...(limited ? { only: limited } : {}),
       }),
@@ -152,7 +158,12 @@ export function QuizPage({
   }, [onlyKeys, quizSize, restart]);
 
   const types = normalizeTypes(store.prefs.quizTypes);
-  const poolReady = store.ready && store.words.length >= MIN_POOL;
+  // 可出题的池子 = 学过的词，不是全库
+  const studiedCount = store.words.reduce(
+    (n, w) => (store.records.has(w.key) ? n + 1 : n),
+    0,
+  );
+  const poolReady = store.ready && studiedCount >= MIN_POOL;
   const canBuild = poolReady && types.length > 0;
 
   /**
@@ -195,15 +206,31 @@ export function QuizPage({
     );
   }
 
+  if (studiedCount === 0) {
+    return (
+      <Shell>
+        <EmptyCard
+          title="还没有学过的词"
+          body="测试只考已经学过的词（有复习记录或标记过已掌握）。先去复习几轮，再回来检验。"
+          action={
+            <Button size="touch" onClick={onExit}>
+              去复习
+            </Button>
+          }
+        />
+      </Shell>
+    );
+  }
+
   if (!poolReady) {
     return (
       <Shell>
         <EmptyCard
-          title={`词表只有 ${store.words.length} 个词`}
-          body={`四选一需要同一池子里的干扰项，至少 ${MIN_POOL} 个词才能开始。先去词表加载更多等级。`}
+          title={`学过的词只有 ${studiedCount} 个`}
+          body={`四选一需要同一池子里的干扰项，至少 ${MIN_POOL} 个词才出得了题。再学几个词就有了。`}
           action={
             <Button size="touch" onClick={onExit}>
-              去词表加载等级
+              去复习
             </Button>
           }
         />

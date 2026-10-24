@@ -5,9 +5,6 @@ import { Slider } from "@/components/ui/slider";
 import { dayKey } from "@/lib/date";
 import type { Stats } from "@/lib/session";
 import {
-  NEW_PER_DAY_MAX,
-  NEW_PER_DAY_MIN,
-  NEW_PER_DAY_STEP,
   QUIZ_SIZES,
   QUIZ_TYPES,
   REVIEW_SIZES,
@@ -38,15 +35,10 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
   const todayKey = today ?? dayKey();
 
   // 滑杆用本地草稿：拖动时只动 UI，松手/失焦/键盘抬起才落库，避免每 1% 写一次 IndexedDB
-  const [newDraft, setNewDraft] = useState(prefs.newPerDay);
   const [retentionDraft, setRetentionDraft] = useState(prefs.retention);
 
-  useEffect(() => setNewDraft(prefs.newPerDay), [prefs.newPerDay]);
   useEffect(() => setRetentionDraft(prefs.retention), [prefs.retention]);
 
-  const commitNewPerDay = () => {
-    if (newDraft !== prefs.newPerDay) onPrefsChange({ newPerDay: newDraft });
-  };
   const commitRetention = () => {
     const next = Number(retentionDraft.toFixed(2));
     if (next !== prefs.retention) onPrefsChange({ retention: next });
@@ -148,32 +140,6 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
             })}
           </div>
         </div>
-      </section>
-
-      {/* 新词上限 */}
-      <section>
-        <div className="flex items-baseline justify-between gap-2">
-          <label htmlFor="pref-new-per-day" className="text-[13px] font-medium text-ink">
-            每日新词上限
-          </label>
-          <span className="text-[13px] font-medium text-brand-ink tnum">{newDraft} 个</span>
-        </div>
-        <Slider
-          id="pref-new-per-day"
-          min={NEW_PER_DAY_MIN}
-          max={NEW_PER_DAY_MAX}
-          step={NEW_PER_DAY_STEP}
-          value={newDraft}
-          aria-describedby="pref-new-per-day-hint"
-          onChange={(event) => setNewDraft(Number(event.target.value))}
-          onPointerUp={commitNewPerDay}
-          onKeyUp={commitNewPerDay}
-          onBlur={commitNewPerDay}
-        />
-        <p id="pref-new-per-day-hint" className="text-[12px] leading-5 text-ink-mute tnum">
-          今日已学 {stats.newToday} 个，剩余额度 {Math.max(0, prefs.newPerDay - stats.newToday)} 个。
-          每天学几个都行，随时可以改。
-        </p>
       </section>
 
       {/*

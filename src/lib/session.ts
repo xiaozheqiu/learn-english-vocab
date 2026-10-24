@@ -15,6 +15,14 @@ import {
 const COOLDOWN_MS = MASTERY_COOLDOWN_DAYS * 86_400_000;
 
 /**
+ * 单轮里最多放多少张**全新**的词。
+ *
+ * 不做每日配额，但一轮灌 300 个新词同样不合理：来不及记，也做不完。
+ * 20 张大约是 3–5 分钟的节奏，做完想继续就再来一轮。
+ */
+export const NEW_BATCH = 20;
+
+/**
  * 「已掌握」是否需要重新抽查。
  *
  * 旧版把 mastered 当成永久排除：点一次就再也不进任何队列，
@@ -67,8 +75,6 @@ export interface ReviewPlan {
   dueTotal: number;
   /** 队列中新词数量（截断前） */
   newTotal: number;
-  /** 今日剩余新词额度 */
-  newQuotaLeft: number;
   /** 本次题量上限 */
   limit: number;
   /**
@@ -85,27 +91,23 @@ export interface BuildPlanInput {
   records: ReadonlyMap<string, SrsCardRecord>;
   /** key → 「已掌握」标记时间 */
   mastered: ReadonlyMap<string, number>;
-  /** 今日已学新词数 */
-  newLearnedToday: number;
-  prefs: Pick<Prefs, "newPerDay" | "reviewSize" | "retention">;
+  prefs: Pick<Prefs, "reviewSize" | "retention">;
   now?: Date;
 }
 
 /**
  * 队列构成：
  * 1. 取 due ≤ now 且未手动标记已掌握，按 R 升序（R 相同则逾期久的先）
- * 2. 再按每日新词额度补「从未评分」的新词
- * 3. 按单次题量截断
+ * 2. 再补「从未评分」的新词
+ * 3. 按单轮题量（reviewSize）截断
  *
- * 为什么「新词」要有一个每日上限而不是能学多少学多少：
- * 已学词都会按 FSRS 排队，今天多学的每一个都会变成未来几周的复习量。
- * 所以上限保护的是「未来的自己」，不是替用户定节奏 —— 它随时可调，
- * 想多学就把额度调高，用户自己决定透支多少。
+ * 新词没有每日配额，但也不是「一次灌满」：一轮里新词最多占
+ * `NEW_BATCH` 张。原因是全灌会给出 300 张全新词 —— 一屏里全是从没见过的词，
+ * 既做不完也记不住。给一批、做完再来一轮，节奏仍完全由用户决定。
  */
 export function buildReviewPlan(input: BuildPlanInput): ReviewPlan {
   const now = input.now ?? new Date();
   const { records, mastered, prefs } = input;
-  const newQuotaLeft = Math.max(0, prefs.newPerDay - input.newLearnedToday);
 
   const due: ReviewItem[] = [];
   const fresh: ReviewItem[] = [];
@@ -115,7 +117,7 @@ export function buildReviewPlan(input: BuildPlanInput): ReviewPlan {
     if (isShelved(mastered, word.key, now)) continue;
     const record = records.get(word.key) ?? null;
     if (!record || record.reps <= 0) {
-      // 已掌握但到期抽查的新词不占用每日新词额度
+      // 已掌握但到期抽查的词算「到期」，其余算新词
       if (mastered.has(word.key)) {
         due.push({ word, record, r: 0, overdue: 0 });
         continue;
@@ -134,17 +136,16 @@ export function buildReviewPlan(input: BuildPlanInput): ReviewPlan {
   }
 
   due.sort((a, b) => (a.r === b.r ? b.overdue - a.overdue : a.r - b.r));
-  // 新词按入库顺序补齐，避免每次刷新都换一批（可预测比随机更利于建立习惯）
-  const quota = fresh.slice(0, newQuotaLeft);
 
-  const merged = [...due, ...quota];
+  // 到期卡优先；新词每轮最多给一批，剩下的留到下一轮
   const limit = Math.max(1, prefs.reviewSize);
+  const freshBatch = fresh.slice(0, Math.min(NEW_BATCH, limit));
+  const merged = [...due, ...freshBatch];
   const items = merged.slice(0, limit);
   return {
     items,
     dueTotal: due.length,
-    newTotal: quota.length,
-    newQuotaLeft,
+    newTotal: Math.max(0, items.length - due.length),
     limit,
     carryOver: Math.max(0, merged.length - items.length),
   };

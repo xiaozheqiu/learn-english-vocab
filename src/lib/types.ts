@@ -98,8 +98,6 @@ export interface DayRecord {
 export interface Prefs {
   pageSize: PageSize;
   defaultLevel: LevelFilter;
-  /** 每日新词上限 */
-  newPerDay: number;
   /**
    * 单轮复习题量。要能装下当天的到期卡，所以偏大（默认 300）。
    * 复习的任务是「清账」，做完才算今天结束。
@@ -121,19 +119,6 @@ export interface Prefs {
 export type QuizType = "en2cn" | "cn2en" | "spell";
 
 export const QUIZ_TYPES: readonly QuizType[] = ["en2cn", "cn2en", "spell"];
-
-/**
- * 每日新词上限。
- *
- * 20–80 是「可持续」的区间：每天 60 个新词会连带出 190 次复习（实测），
- * 连续三个月是很陡的强度；80 之上复习量会压到做不完，只是把欠账推给明天。
- *
- * 对应的覆盖时长（5323 条）：20 个/天约 267 天，60 个/天约 89 天，80 个/天约 67 天。
- * 冲刺目标不再是硬性的「必须 90 天」，而是按当前设置实时显示「还需要多久」。
- */
-export const NEW_PER_DAY_MIN = 20;
-export const NEW_PER_DAY_MAX = 80;
-export const NEW_PER_DAY_STEP = 10;
 
 /** 单轮复习题量候选。60 个新词/天时到期峰值实测 265，默认取 300 才吃得下 */
 export const REVIEW_SIZES = [150, 200, 300, 500] as const;
@@ -157,7 +142,6 @@ export const SPRINT_TARGET = 5323;
 export const DEFAULT_PREFS: Prefs = {
   pageSize: 20,
   defaultLevel: "A1",
-  newPerDay: NEW_PER_DAY_MIN,
   reviewSize: DEFAULT_REVIEW_SIZE,
   quizSize: DEFAULT_QUIZ_SIZE,
   retention: 0.9,

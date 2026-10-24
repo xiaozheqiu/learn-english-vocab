@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ReviewSession } from "./ReviewSession";
-import { dayKey } from "@/lib/date";
 import { buildReviewPlan, type ReviewItem } from "@/lib/session";
 import type { PageProps } from "@/components/contracts";
 
@@ -47,13 +46,10 @@ export function ReviewPage({ store, onExit, onGoQuiz }: ReviewPageProps) {
     if (builtRound.current === round) return;
     builtRound.current = round;
     const current = storeRef.current;
-    // 今日已学新词从当日计数取：额度只看库里的事实，不看本次会话
-    const newLearnedToday = current.days.get(dayKey())?.newWords ?? 0;
     const plan = buildReviewPlan({
       words: current.words,
       records: current.records,
       mastered: current.mastered,
-      newLearnedToday,
       prefs: current.prefs,
     });
     setState({
