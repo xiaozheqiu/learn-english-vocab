@@ -19,7 +19,7 @@ const COOLDOWN_MS = MASTERY_COOLDOWN_DAYS * 86_400_000;
  *
  * 旧版把 mastered 当成永久排除：点一次就再也不进任何队列，
  * 点错了（或当时只是眼熟）这个词就永远漏掉了 —— 和「长期记得」直接矛盾。
- * 现在按标记时间给一张免检期（MASTERY_COOLDOWN_DAYS，冲刺期 30 天），
+ * 现在按标记时间给一张免检期（MASTERY_COOLDOWN_DAYS，默认 30 天），
  * 到期后自动回到复习队列考一次；那次答对就重新发放。所以这个按钮是「降频」，不是「毕业」。
  */
 export function masteryDueAt(at: number): number {
@@ -74,7 +74,7 @@ export interface ReviewPlan {
   /**
    * 本次装不下、留到明天的到期卡数。
    *
-   * 90 天冲刺里峰值能到 265 张，单次做不完全正常；断了几天更会攒起来。
+   * 每天 60 个新词时到期峰值能到 265 张，单次做不完全正常；断了几天更会攒起来。
    * 这部分不丢，但要让人看得见 —— 否则「慢慢处理」会变成「不知道欠了多少」。
    */
   carryOver: number;

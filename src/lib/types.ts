@@ -123,16 +123,19 @@ export type QuizType = "en2cn" | "cn2en" | "spell";
 export const QUIZ_TYPES: readonly QuizType[] = ["en2cn", "cn2en", "spell"];
 
 /**
- * 每日新词。
+ * 每日新词上限。
  *
- * 目标：三个月（90 天）覆盖 5323 条 → 每天至少 ceil(5323/90) = 60 个新词。
- * 下限因此定在 60 而不是 20；上限 120 给「想更快」的人留余量。
+ * 20–80 是「可持续」的区间：每天 60 个新词会连带出 190 次复习（实测），
+ * 连续三个月是很陡的强度；80 之上复习量会压到做不完，只是把欠账推给明天。
+ *
+ * 对应的覆盖时长（5323 条）：20 个/天约 267 天，60 个/天约 89 天，80 个/天约 67 天。
+ * 冲刺目标不再是硬性的「必须 90 天」，而是按当前设置实时显示「还需要多久」。
  */
-export const NEW_PER_DAY_MIN = 60;
-export const NEW_PER_DAY_MAX = 120;
+export const NEW_PER_DAY_MIN = 20;
+export const NEW_PER_DAY_MAX = 80;
 export const NEW_PER_DAY_STEP = 10;
 
-/** 单轮复习题量候选。90 天冲刺的到期峰值实测 265，默认取 300 才吃得下 */
+/** 单轮复习题量候选。60 个新词/天时到期峰值实测 265，默认取 300 才吃得下 */
 export const REVIEW_SIZES = [150, 200, 300, 500] as const;
 export const DEFAULT_REVIEW_SIZE = 300;
 
@@ -143,14 +146,12 @@ export const DEFAULT_QUIZ_SIZE = 50;
 /**
  * 标记「已掌握」后的免检天数。
  *
- * 早期的 180 天在 90 天冲刺里等于永久免检，所以定 30 天：标记后一个月抽查一次，
+ * 早期的 180 天等于永久免检，所以定 30 天：标记后一个月抽查一次，
  * 考过续期。这样「已掌握」仍然是降频而不是毕业。
  */
 export const MASTERY_COOLDOWN_DAYS = 30;
 
-/** 三个月冲刺的天数，用来算每日新词配额与进度提示 */
-export const SPRINT_DAYS = 90;
-/** 冲刺目标词量（A1–C1 全部） */
+/** 目标词量（A1–C1 全部）；进度条与「还要多少天」都以它为分母 */
 export const SPRINT_TARGET = 5323;
 
 export const DEFAULT_PREFS: Prefs = {

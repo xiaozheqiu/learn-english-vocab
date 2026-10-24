@@ -79,10 +79,17 @@ describe("偏好归一与迁移", () => {
     expect(normalizePrefs({ pageSize: 20, sessionSize: 400 }).reviewSize).toBe(500);
   });
 
-  it("新词上限被抬到冲刺区间（老库里的 15/20 要升级）", () => {
-    expect(normalizePrefs({ pageSize: 20, newPerDay: 15 }).newPerDay).toBe(60);
-    expect(normalizePrefs({ pageSize: 20, newPerDay: 200 }).newPerDay).toBe(120);
+  it("新词上限被夹进 20–80（老库里的 15 抬到 20，超出的 120 收到 80）", () => {
+    // 低于下限：抬到 20（每天 20 个约 267 天覆盖全库，是可持续的下限）
+    expect(normalizePrefs({ pageSize: 20, newPerDay: 15 }).newPerDay).toBe(20);
+    expect(normalizePrefs({ pageSize: 20, newPerDay: 5 }).newPerDay).toBe(20);
+    // 高于上限：收到 80（120 个/天的复习量压不住）
+    expect(normalizePrefs({ pageSize: 20, newPerDay: 120 }).newPerDay).toBe(80);
+    expect(normalizePrefs({ pageSize: 20, newPerDay: 200 }).newPerDay).toBe(80);
+    // 区间内按步长取整
     expect(normalizePrefs({ pageSize: 20, newPerDay: 75 }).newPerDay).toBe(80);
+    expect(normalizePrefs({ pageSize: 20, newPerDay: 34 }).newPerDay).toBe(30);
+    expect(normalizePrefs({ pageSize: 20, newPerDay: 60 }).newPerDay).toBe(60);
   });
 
   it("完全缺失或脏值时给全套默认", () => {

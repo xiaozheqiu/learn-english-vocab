@@ -81,7 +81,7 @@ describe("复习队列", () => {
   });
 });
 
-describe("积压可见（90 天冲刺）", () => {
+describe("积压可见", () => {
   it("到期超过单次题量时，装不下的部分算进 carryOver", () => {
     const words = Array.from({ length: 12 }, (_, i) => w(`k${i}`));
     const records = new Map(words.map((word) => [word.key, card(word.key, -1, { stability: 3 })]));
