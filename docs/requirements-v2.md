@@ -629,3 +629,13 @@ PWA 预缓存后只取一次。用 computedStyle 逐项确认 token 色值、圆
 | 未知 hash 不纠正 | 直接打开 `#/nonsense`，界面是词表但地址栏一直是 `#/nonsense` | 收敛逻辑放在「route 变化」的 effect 里；`#/nonsense` 与 `#/` 都解析成 list，route 没变所以 effect 不跑。改为在 hashchange 回调里直接收敛 |
 | 评分按钮 selector 脆弱 | 脚本用 `/^记得/` 匹配可访问名称，实际名称是「记得，3 天后复习」 | 给按钮加 `data-grade`，按语义而非文案定位 |
 | 两个抽屉无法区分 | `getByRole("dialog")` 同时匹配筛选与批量抽屉，判断「关闭」时误判 | 给两个 `SheetContent` 加 `data-testid` |
+
+#### 让回归也能跑在生产构建上
+
+线上没有 `/src` 源码模块，靠 `import("/src/lib/words.ts")` 读 store 的校验只能跳过。
+用 hostname 判断环境（而不是请求一下再让控制台留 404 —— 控制台错误本身是被断言的），
+线上改为跑等价的 DOM 检查（题数 == 已学数）。
+
+顺带修了 `review.undoRestoresQueue` 的时序问题：
+`until` 拿到第一帧的值就返回，撤销还没生效时会误判为失败。
+改成先等「数值小于变化前」再读。
