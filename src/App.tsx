@@ -9,8 +9,10 @@ import { ReviewPage } from "@/components/Review";
 import { QuizPage } from "@/components/Quiz";
 import { FloatingPanel } from "@/components/Panel/FloatingPanel";
 import { GuidePage } from "@/components/GuidePage";
+import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { useLock } from "@/hooks/useLock";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
+import { usePwaUpdate } from "@/hooks/usePwaUpdate";
 import { useVocabStore } from "@/hooks/useVocabStore";
 import { navigate, parseRoute, routeHref, type Route } from "@/lib/route";
 import { computeStats } from "@/lib/session";
@@ -46,6 +48,12 @@ function AppShell() {
   const store = useVocabStore();
   const lock = useLock();
   const isDesktop = useIsDesktop();
+  /**
+   * 必须在下面那些早期 return（加载中 / 首次设置 / 锁屏）之前调用：
+   * 否则停在锁屏或向导时 SW 注册与前台检查都不会跑，
+   * 刚装完就一直开在向导页的用户永远等不到更新检查。
+   */
+  const pwaUpdate = usePwaUpdate();
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
   const [panelOpen, setPanelOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<{ prompt: () => Promise<void> } | null>(null);
@@ -366,6 +374,13 @@ function AppShell() {
 
       {/* 深链兜底：导航后把 hash 对齐到实际渲染的页面 */}
       <span className="hidden">{routeHref(activeRoute)}</span>
+
+      {/*
+        更新提示只挂在主壳：锁屏 / 首次向导期间不弹 ——
+        那时用户的注意力在 PIN 键盘和建库上，弹窗还会抢走焦点。
+        新 SW 停在 waiting 不会跑掉，解锁后照样提示。
+      */}
+      <UpdatePrompt update={pwaUpdate} />
     </div>
   );
 }
