@@ -64,11 +64,16 @@ export function QuizPage({
   onPracticeWrong,
   onGoReview,
 }: QuizPageProps) {
-  // 抽题要读最新的词表/记录/偏好，但又不该被它们的变化触发重抽：走 ref 读现值
+  /*
+   * 抽题要读最新的词表/记录/偏好，但又不该被它们的变化触发重抽：走 ref 读现值。
+   *
+   * 必须在**渲染期**同步写 ref，不能放 useEffect：
+   * 自动补抽的 effect 与本 effect 在同一次提交里按声明顺序执行，
+   * 放 effect 里就会先读到上一次渲染的旧 store —— 实测表现为
+   * 「学完 20 个词再回测试，只出 8 题」（用了学之前的记录数）。
+   */
   const inputs = useRef(store);
-  useEffect(() => {
-    inputs.current = store;
-  }, [store]);
+  inputs.current = store;
 
   const draw = useCallback((only: readonly string[] | null | undefined): Run => {
     const { words, records, prefs } = inputs.current;
@@ -167,18 +172,24 @@ export function QuizPage({
   const canBuild = poolReady && types.length > 0;
 
   /**
-   * 进入页面时词表可能还在加载、题型也可能刚在浮窗里勾上，那时抽出来的是空套。
-   * 一旦凑齐条件就自动补抽一套；抽不出来（比如 onlyKeys 不在当前词表里）就不动，
-   * 交给下面的空态给用户下一步。
+   * 补抽一套的时机：**本页可见，且条件终于凑齐**。
+   *
+   * 只在 effect 里判断 canBuild 是不够的：测试页是常驻面板，隐藏时 effect 照跑。
+   * 用户在复习页一个个学新词时，每学一个 records 就变一次，这里会跟着补抽 ——
+   * 实测在学到第 8 个词时抽了一套 8 道题并冻结下来，回到测试页就只有 8 题。
+   *
+   * 所以加 active 门控：页面不可见时绝不抽题；重新可见时若手里是空套再补。
    */
+  const active = usePageActive();
   useEffect(() => {
+    if (!active) return;
     if (!canBuild || run.questions.length > 0) return;
     const next = draw(run.only);
     if (next.questions.length === 0) return;
     runSeq += 1;
     setRunStamp(runSeq);
     setRun(next);
-  }, [canBuild, draw, run]);
+  }, [active, canBuild, draw, run]);
 
   /* ── 空态（§7：每个空态都给下一步动作）────────────────────── */
 
