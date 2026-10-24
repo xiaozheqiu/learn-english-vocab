@@ -516,3 +516,26 @@ docs/requirements-v2.md       本文档
 
 `retrievability` 换公式后用 63 组 (stability, elapsed) 网格与 ts-fsrs 库实现逐值交叉校验
 （误差 < 1e-7），防止公式漂移导致队列排序与留存率静默变味。
+
+### 第九轮：版本与依赖升级
+
+问「为什么不用最新最稳的」，逐项查证后的结论：
+
+| 项 | 之前 | 现在 | 说明 |
+|---|---|---|---|
+| CI Node | 22 | **24 LTS** | 26 是 Current 线（奇数主版本无稳定性承诺） |
+| actions/* | v4/v4/v5/v3/v4 | **v7/v7/v6/v5/v5** | 全部当前主版本 |
+| vite | 7.3.6 | **8.2.0** | |
+| vitest | 3.2.7 | **4.1.10** | critical（tinypool RCE）随之清零 |
+| tailwindcss | 3.4.19 | **4.3.3** | 迁到 `@theme` CSS-first，postcss 插件换 `@tailwindcss/postcss` |
+| lucide-react | 0.468 | **1.52.0** | |
+| tailwind-merge | 2.6.1 | **3.7.0** | |
+| React | 19.2.8 | 19.2.8（不变） | **registry 最新**，`npm outdated` 报的 19.3.0 不存在 |
+| TypeScript | 5.9.3 | 5.9.3（不变） | 7 是 preview 线 |
+
+踩到的坑：`npm outdated` 与 `npm view <pkg> dist-tags.latest` 结果不一致
+（前者报 react@19.3.0 / @types/react@19.3.0，registry 里都没有）。
+最终以 `npm view` 为准，`npm install @types/react@latest` 会直接 404。
+
+CSS 体积 29KB → 47KB（gzip 9KB）：Tailwind 4 自带 vendor prefix、主题变量更完整，
+PWA 预缓存后只取一次。用 computedStyle 逐项确认 token 色值、圆形按钮、阴影均正确。

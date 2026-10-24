@@ -31,6 +31,23 @@ npm run build        # data + typecheck + vite build（含 PWA）
 
 ## 页面
 
+## 版本策略
+
+「最新」和「最稳」不是一回事，本项目的取舍：
+
+| 组件 | 用版本 | 为什么不是更新/更旧的 |
+|---|---|---|
+| CI Node | 24 LTS（Krypton） | 26 是 Current 线，奇数主版本不承诺 API 稳定；22 LTS 维护期更短 |
+| Actions | checkout v7 / setup-node v7 / configure-pages v6 / upload-pages-artifact v5 / deploy-pages v5 | 都是当前主版本，`vN` 浮动 tag 是官方推荐写法 |
+| React | 19.2.8 | registry 最新（`npm outdated` 报的 19.3.0 在 npm 上不存在） |
+| TypeScript | 5.9.3 | 7 是 preview 线，5.9 是稳定版 |
+| Vite / Vitest | 8.2.0 / 4.1.10 | 当前稳定主版本 |
+| Tailwind | 4.3.3 | CSS-first 配置（`@theme`），动画用 `tw-animate-css` 替代 v3 的插件 |
+
+安全：`npm audit` 的 critical 已清零。剩余 10 条 advisory 全部落在 dev 构建链
+（vite / vitest / workbox / postcss 等），不进产物；其中 vite 的 launch-editor
+问题上游尚未修复（8.2.0 已是最新版）。
+
 ## 性能
 
 全库 5323 词、5323 张 FSRS 卡的规模下实测：`computeStats` 0.53ms、`buildReviewPlan` 0.38ms、
