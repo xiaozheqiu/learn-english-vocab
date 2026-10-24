@@ -2,12 +2,131 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root { --background: 214 36% 95%; --foreground: 222 47% 11%; --card: 0 0% 100%; --card-foreground: 222 47% 11%; --primary: 221 83% 53%; --primary-foreground: 0 0% 100%; --secondary: 214 32% 90%; --secondary-foreground: 222 47% 11%; --muted: 214 32% 90%; --muted-foreground: 215 16% 42%; --accent: 188 78% 91%; --accent-foreground: 197 80% 26%; --destructive: 0 72% 51%; --destructive-foreground: 0 0% 100%; --border: 214 28% 82%; --input: 214 25% 72%; --ring: 221 83% 53%; --radius: 0.75rem; }
-  * { @apply border-border; }
-  html { -webkit-text-size-adjust: 100%; }
-  body { @apply m-0 min-w-[320px] bg-background font-sans antialiased; }
-  button, input, select { font: inherit; }
+/* ── 设计 token（§1.2）──────────────────────────────────────────── */
+:root {
+  --paper: #f2f5f1;
+  --card: #ffffff;
+  --ink: #10201b;
+  --ink-soft: #4e6159;
+  --ink-mute: #6b7a73;
+  --brand: #0e7c5a;
+  --brand-ink: #0b6e50;
+  --brand-deep: #0a4a3a;
+  --brand-wash: #e4f0ea;
+  --brand-500: #1d9e75;
+  --learning: #7fbfaa;
+  --line: #dce3dd;
+  --due: #9a5b0b;
+  --due-wash: #fbf0df;
+  --danger: #a62821;
+  --danger-wash: #fbeae8;
 }
 
-@layer utilities { input[type="search"]::-webkit-search-cancel-button { @apply cursor-pointer; } input[type="number"]::-webkit-inner-spin-button { margin: 0; } }
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-weight: 600;
+    margin: 0;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  /* 所有数字等宽，页码/间隔/计数不抖（§1.3） */
+  .tnum,
+  input[type="number"],
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+  }
+  [data-focus-lock] :not([tabindex="-1"]) {
+    scroll-margin-block: 24px;
+  }
+}
+
+@layer components {
+  .word-serif {
+    font-family: ui-serif, "Iowan Old Style", "Palatino Linotype",
+      "Source Han Serif SC", "Songti SC", Georgia, serif;
+    font-variant-numeric: tabular-nums;
+  }
+  .prose-measure {
+    max-width: 72ch;
+  }
+  /* 状态左栏（§1.5）：3px 竖条，透明即「未学」 */
+  .rail {
+    position: relative;
+  }
+  .rail::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: transparent;
+    border-radius: 0 2px 2px 0;
+  }
+  .rail-due::before {
+    background: var(--due);
+  }
+  .rail-learning::before {
+    background: var(--learning);
+  }
+  .rail-solid::before {
+    background: var(--brand);
+  }
+  .rail-mastered::before {
+    background: var(--brand-deep);
+    width: 4px;
+  }
+}
+
+@layer utilities {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  input[type="search"]::-webkit-search-cancel-button {
+    cursor: pointer;
+  }
+  input[type="number"]::-webkit-inner-spin-button {
+    margin: 0;
+  }
+}
+
+/* ── 动效只有两处（§1.4）───────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

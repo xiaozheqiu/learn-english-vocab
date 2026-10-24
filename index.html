@@ -6,21 +6,26 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
-    <title>Oxford 5000 词汇表</title>
+    <title>背单词 · Oxford 5000</title>
     <meta
       name="description"
-      content="Oxford 3000 / 5000 分级词汇表（A1–C1，5323 条），可勾选标记已掌握。"
+      content="Oxford 3000 / 5000 分级词汇（A1–C1，5323 条），FSRS 间隔复习，离线可用。"
     />
-    <meta name="theme-color" content="#2563eb" />
+    <meta name="theme-color" content="#0E7C5A" />
     <link rel="icon" href="./icons/favicon-32.png" sizes="32x32" />
     <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Oxford 5000" />
+    <meta name="apple-mobile-web-app-title" content="背单词" />
+    <style>
+      /* 启动即渲染纸色底，避免锁屏前闪一下白屏（§4.1） */
+      html, body { margin: 0; background: #F2F5F1; }
+      #app { min-height: 100dvh; }
+    </style>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
