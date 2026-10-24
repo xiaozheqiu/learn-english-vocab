@@ -75,8 +75,44 @@ function supportsIdb(): boolean {
   }
 }
 
+/**
+ * 同步判断「肯定是内存态」。
+ *
+ * 只能证明没有 IDB，证明不了「有但打不开」—— Safari 无痕模式里
+ * `indexedDB` 这个对象是存在的，open() 才抛 SecurityError。
+ * 那种情况必须靠下面的 probeStorage() 异步发现。
+ */
 export function isMemoryMode(): boolean {
   return !supportsIdb();
+}
+
+/**
+ * 真正验证存储可用：能打开、能写、能读回。
+ *
+ * 只在启动时跑一次（见 useVocabStore），用来揭穿 isMemoryMode() 看不见的
+ * 「API 在但打不开」。单独用探针库，不碰 ox5000，删得掉就删。
+ */
+export async function probeStorage(): Promise<boolean> {
+  if (!supportsIdb()) return false;
+  const PROBE = "ox5000-probe";
+  try {
+    const handle = await openDB(PROBE, 1, {
+      upgrade(database) {
+        database.createObjectStore("probe");
+      },
+    });
+    try {
+      await handle.put("probe", Date.now(), "probe");
+      const readBack = await handle.get("probe", "probe");
+      return typeof readBack === "number";
+    } finally {
+      handle.close();
+      // 探针库没有价值，能删就删；删不掉也不影响
+      indexedDB.deleteDatabase(PROBE);
+    }
+  } catch {
+    return false;
+  }
 }
 
 function emptySnapshot(): Snapshot {

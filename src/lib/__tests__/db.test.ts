@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_META, normalizePrefs, parseExport } from "../db";
+import { DEFAULT_META, isMemoryMode, normalizePrefs, parseExport, probeStorage } from "../db";
 import { DEFAULT_PREFS } from "../types";
 import { DAY_MS } from "../date";
 
@@ -107,5 +107,43 @@ describe("偏好归一与迁移", () => {
     expect(prefs.reviewSize).toBe(200);
     expect(prefs.quizSize).toBe(30);
     expect(prefs.retention).toBe(0.92);
+  });
+});
+
+/**
+ * 降级判定的两条路径必须都算「内存态」。
+ *
+ * 这是曾经漏掉的一类静默丢数据：隐私模式下 `indexedDB` 这个 API 是存在的
+ * （所以 `isMemoryMode()` 返回 false，界面不提示），但真正 openDB 会抛，
+ * 于是所有写入落到内存里 —— 用户关掉页面进度全没，而且没有任何告警。
+ */
+describe("存储降级判定", () => {
+  it("没有 indexedDB：同步就判定为内存态，探测也失败", async () => {
+    expect(isMemoryMode()).toBe(true);
+    expect(await probeStorage()).toBe(false);
+  });
+
+  it("indexedDB 存在但 open 抛错（隐私模式）：同步看不出来，异步探测必须发现", async () => {
+    const original = globalThis.indexedDB;
+    // 模拟 Safari 隐私模式：API 在，但 open() 直接抛 SecurityError
+    Object.defineProperty(globalThis, "indexedDB", {
+      configurable: true,
+      value: {
+        open: () => {
+          throw new Error("SecurityError: storage disabled");
+        },
+      },
+    });
+    try {
+      // 同步检查被 API 的存在骗过 —— 这正是线上那个静默丢数据的入口
+      expect(isMemoryMode()).toBe(false);
+      // 异步探测必须能揭穿它
+      expect(await probeStorage()).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, "indexedDB", {
+        configurable: true,
+        value: original,
+      });
+    }
   });
 });

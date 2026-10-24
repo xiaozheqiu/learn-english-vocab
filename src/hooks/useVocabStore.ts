@@ -14,6 +14,7 @@ import {
   isMemoryMode,
   loadSnapshot,
   migrateLegacy,
+  probeStorage,
   saveCard,
   saveDay,
   saveMastery,
@@ -110,6 +111,17 @@ export function useVocabStore(): VocabStore {
     let alive = true;
     (async () => {
       try {
+        /**
+         * 先做真实探测，再读快照。
+         *
+         * 《isMemoryMode() 只证明「没有 IDB」，证明不了「有但打不开」》
+         * —— Safari 无痕模式下 API 在、open() 抛，此时所有写入会静默落内存，
+         * 用户关掉页面进度全没还看不到任何提示。这里用 probeStorage()
+         * 把那种情况也判成内存态，让界面上的告警真的亮起来。
+         */
+        const storageOk = await probeStorage();
+        if (alive && !storageOk) setMemoryMode(true);
+
         await migrateLegacy();
         const snapshot = await loadSnapshot();
         if (!alive) return;
