@@ -2,8 +2,9 @@ import { useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PinDots } from "@/components/ui/pin-dots";
 import { LEVELS, type LevelFilter } from "@/lib/types";
-import { explainPinError, isValidPin, PIN_MAX, PIN_MIN } from "@/lib/lock";
+import { explainPinError, isValidPin, PIN_LENGTH } from "@/lib/lock";
 import { cn } from "@/lib/utils";
 
 export interface SetupWizardProps {
@@ -42,7 +43,7 @@ export function SetupWizard({ onDone }: SetupWizardProps) {
     if (step === 0) {
       if (!skipPin) {
         if (!isValidPin(pin)) {
-          setError(`PIN 需为 ${PIN_MIN}–${PIN_MAX} 位数字`);
+          setError(`PIN 需为 ${PIN_LENGTH} 位数字`);
           return;
         }
         if (pin !== confirm) {
@@ -87,22 +88,24 @@ export function SetupWizard({ onDone }: SetupWizardProps) {
 
         {step === 0 ? (
           <div className="mt-6 space-y-4">
+            {/* 定长 6 位：圆点固定 6 个，两栏输入都填满才能进下一步 */}
+            <PinDots total={PIN_LENGTH} filled={pin.length} />
             <div>
               <label htmlFor="setup-pin" className="text-[13px] font-medium text-ink">
-                设置 PIN（4–6 位数字）
+                设置 PIN（{PIN_LENGTH} 位数字）
               </label>
               <Input
                 id="setup-pin"
                 inputMode="numeric"
                 autoComplete="new-password"
-                maxLength={PIN_MAX}
+                maxLength={PIN_LENGTH}
                 value={pin}
                 disabled={skipPin}
                 onChange={(event) => {
-                  setPin(event.target.value.replace(/\D/g, "").slice(0, PIN_MAX));
+                  setPin(event.target.value.replace(/\D/g, "").slice(0, PIN_LENGTH));
                   setError("");
                 }}
-                placeholder="••••"
+                placeholder="••••••"
                 className="mt-1.5 h-11 text-lg tracking-[0.4em]"
               />
             </div>
@@ -114,14 +117,14 @@ export function SetupWizard({ onDone }: SetupWizardProps) {
                 id="setup-pin2"
                 inputMode="numeric"
                 autoComplete="new-password"
-                maxLength={PIN_MAX}
+                maxLength={PIN_LENGTH}
                 value={confirm}
                 disabled={skipPin}
                 onChange={(event) => {
-                  setConfirm(event.target.value.replace(/\D/g, "").slice(0, PIN_MAX));
+                  setConfirm(event.target.value.replace(/\D/g, "").slice(0, PIN_LENGTH));
                   setError("");
                 }}
-                placeholder="••••"
+                placeholder="••••••"
                 className="mt-1.5 h-11 text-lg tracking-[0.4em]"
               />
             </div>

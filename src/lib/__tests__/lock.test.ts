@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createPinHash, hasWebCrypto, hashPin, isValidPin, lockoutRemaining, MAX_ATTEMPTS,
-  LOCKOUT_MS, NO_ATTEMPTS, pinHashBackend, registerFailure, timingSafeEqual, verifyPin,
+  LOCKOUT_MS, NO_ATTEMPTS, PIN_LENGTH, pinHashBackend,
+  registerFailure, timingSafeEqual, verifyPin,
 } from "../lock";
 import { pbkdf2Sha256, sha256, toHex } from "../sha256";
 
@@ -29,12 +30,15 @@ describe("PIN", () => {
     expect(a).toBe(b);
   });
 
-  it("PIN 格式校验 4–6 位数字", () => {
-    expect(isValidPin("1234")).toBe(true);
+  it("PIN 格式校验：必须正好 6 位数字", () => {
+    expect(PIN_LENGTH).toBe(6);
     expect(isValidPin("123456")).toBe(true);
-    expect(isValidPin("123")).toBe(false);
+    expect(isValidPin("000000")).toBe(true);
+    // 4/5 位（旧格式）不再被接受为新 PIN
+    expect(isValidPin("1234")).toBe(false);
+    expect(isValidPin("12345")).toBe(false);
     expect(isValidPin("1234567")).toBe(false);
-    expect(isValidPin("12a4")).toBe(false);
+    expect(isValidPin("12a456")).toBe(false);
     expect(isValidPin("")).toBe(false);
   });
 
@@ -56,6 +60,24 @@ describe("PIN", () => {
     expect(state.failures).toBe(0);
     expect(lockoutRemaining(state, now)).toBe(LOCKOUT_MS);
     expect(lockoutRemaining(state, now + LOCKOUT_MS)).toBe(0);
+  });
+});
+
+/**
+ * 定长 6 位：圆点、键盘上限、自动提交长度全部由 PIN_LENGTH 推导，
+ * 不再存在「输入的位数和上面圆点总数对不上」的可能（2026-10-25 报的那个问题）。
+ */
+describe("定长 PIN 的界面口径", () => {
+  it("PIN_LENGTH 是唯一长度来源", () => {
+    expect(PIN_LENGTH).toBe(6);
+  });
+
+  it("旧库里 4–5 位的 PIN 哈希仍能验证通过（哈希只看明文）", async () => {
+    const old = await createPinHash("1234", 1000);
+    expect(await verifyPin("1234", old)).toBe(true);
+    // 但补零/截断都过不了，说明校验没有偷偷放宽
+    expect(await verifyPin("123400", old)).toBe(false);
+    expect(await verifyPin("123", old)).toBe(false);
   });
 });
 

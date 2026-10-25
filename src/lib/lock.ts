@@ -14,8 +14,15 @@
 import { pbkdf2Sha256, toHex as toHexBytes } from "./sha256";
 import type { PinHash } from "./types";
 
-export const PIN_MIN = 4;
-export const PIN_MAX = 6;
+/**
+ * PIN 固定 6 位。
+ *
+ * 以前是「4–6 位可变」，锁屏只能靠输入长度猜位数，于是 4 位 PIN 输到第 5、6 位时
+ * 圆点还会继续增加，用户看到的圆点总数和实际密码位数对不上。改成定长 6 位后：
+ * 圆点永远 6 个、键盘永远只收 6 位、输满第 6 位就自动校验，三者不可能再漂移。
+ * 老库里的 4/5 位 PIN 仍然能验证通过（哈希只看明文），但改设/重设时必须是 6 位。
+ */
+export const PIN_LENGTH = 6;
 export const PBKDF2_ITERATIONS = 100_000;
 export const MAX_ATTEMPTS = 5;
 export const LOCKOUT_MS = 30_000;
@@ -139,8 +146,9 @@ export function explainPinError(error: unknown): string {
   return raw || "设置失败";
 }
 
+/** PIN 必须正好 6 位数字 */
 export function isValidPin(pin: string): boolean {
-  return new RegExp(`^\\d{${PIN_MIN},${PIN_MAX}}$`).test(pin);
+  return new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin);
 }
 
 /* ── 解锁状态（sessionStorage：同一标签页刷新不重复问）────────── */

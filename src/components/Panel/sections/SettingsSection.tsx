@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { loadSnapshot } from "@/lib/db";
-import { explainPinError, isValidPin, PIN_MAX, PIN_MIN, pinHashBackend, verifyPin } from "@/lib/lock";
+import { explainPinError, isValidPin, PIN_LENGTH, pinHashBackend, verifyPin } from "@/lib/lock";
 import {
   LEVELS,
   PAGE_SIZES,
@@ -56,7 +56,7 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
     setPinNotice("");
 
     if (!isValidPin(newPin)) {
-      setPinError(`新 PIN 需为 ${PIN_MIN}–${PIN_MAX} 位数字`);
+      setPinError(`新 PIN 需为 ${PIN_LENGTH} 位数字`);
       return;
     }
     if (newPin !== confirmPin) {
@@ -67,8 +67,8 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
     setPinBusy(true);
     try {
       if (pinMode === "change") {
-        if (oldPin.length < PIN_MIN) {
-          setPinError(`请先输入旧 PIN（${PIN_MIN}–${PIN_MAX} 位数字）`);
+        if (oldPin.length < PIN_LENGTH) {
+          setPinError(`请先输入旧 PIN（${PIN_LENGTH} 位数字）`);
           return;
         }
         // 旧 PIN 用 PBKDF2 校验（比对哈希，不碰明文）；错误就地提示，
@@ -220,7 +220,7 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
 
         {!lock.lockEnabled && (
           <p className="text-[12px] leading-5 text-ink-mute">
-            未开启时打开应用直接进入词表。开启需要设置 4–6 位数字 PIN。
+            未开启时打开应用直接进入词表。开启需要设置 {PIN_LENGTH} 位数字 PIN。
           </p>
         )}
 
@@ -336,35 +336,35 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
                   type="password"
                   inputMode="numeric"
                   autoComplete="current-password"
-                  maxLength={PIN_MAX}
+                  maxLength={PIN_LENGTH}
                   value={oldPin}
                   onChange={(event) => {
                     setOldPin(digits(event.target.value));
                     setPinError("");
                   }}
                   className="mt-1 h-11 tracking-[0.4em] tnum"
-                  placeholder="••••"
+                  placeholder="••••••"
                 />
               </div>
             )}
 
             <div className="mt-2">
               <label htmlFor="pin-new" className="text-[12px] text-ink-soft">
-                新 PIN（{PIN_MIN}–{PIN_MAX} 位数字）
+                新 PIN（{PIN_LENGTH} 位数字）
               </label>
               <Input
                 id="pin-new"
                 type="password"
                 inputMode="numeric"
                 autoComplete="new-password"
-                maxLength={PIN_MAX}
+                maxLength={PIN_LENGTH}
                 value={newPin}
                 onChange={(event) => {
                   setNewPin(digits(event.target.value));
                   setPinError("");
                 }}
                 className="mt-1 h-11 tracking-[0.4em] tnum"
-                placeholder="••••"
+                placeholder="••••••"
               />
             </div>
 
@@ -377,14 +377,14 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
                 type="password"
                 inputMode="numeric"
                 autoComplete="new-password"
-                maxLength={PIN_MAX}
+                maxLength={PIN_LENGTH}
                 value={confirmPin}
                 onChange={(event) => {
                   setConfirmPin(digits(event.target.value));
                   setPinError("");
                 }}
                 className="mt-1 h-11 tracking-[0.4em] tnum"
-                placeholder="••••"
+                placeholder="••••••"
               />
             </div>
 
@@ -425,7 +425,7 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
 }
 
 function digits(value: string): string {
-  return value.replace(/\D/g, "").slice(0, PIN_MAX);
+  return value.replace(/\D/g, "").slice(0, PIN_LENGTH);
 }
 
 /** LockApi 未来暴露 verifyPin 时直接复用，避免两处校验口径漂移 */

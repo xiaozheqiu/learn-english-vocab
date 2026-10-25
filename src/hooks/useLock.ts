@@ -119,9 +119,15 @@ export function useLock(): LockApi {
 
   const completeSetup = useCallback(
     async ({ pin, remember }: { pin: string | null; remember: boolean }) => {
-      if (pin && !isValidPin(pin)) throw new Error("PIN 需为 4–6 位数字");
+      if (pin && !isValidPin(pin)) throw new Error("PIN 需为 6 位数字");
       if (!pin) {
-        await saveMeta({ lockEnabled: false, setupDone: true, pinHash: null, lockGraceUntil: null });
+        await saveMeta({
+          lockEnabled: false,
+          setupDone: true,
+          pinHash: null,
+          lockGraceUntil: null,
+        });
+        storedPin.current = null;
         setLockEnabled(false);
         setSetupDone(true);
         setUnlocked(true);
@@ -129,7 +135,12 @@ export function useLock(): LockApi {
       }
       const pinHash = await createPinHash(pin);
       const until = remember ? Date.now() + 7 * 86_400_000 : null;
-      await saveMeta({ lockEnabled: true, setupDone: true, pinHash, lockGraceUntil: until });
+      await saveMeta({
+        lockEnabled: true,
+        setupDone: true,
+        pinHash,
+        lockGraceUntil: until,
+      });
       storedPin.current = pinHash;
       setLockEnabled(true);
       setSetupDone(true);
@@ -166,7 +177,7 @@ export function useLock(): LockApi {
   }, [lockEnabled]);
 
   const resetPin = useCallback(async (pin: string) => {
-    if (!isValidPin(pin)) throw new Error("PIN 需为 4–6 位数字");
+    if (!isValidPin(pin)) throw new Error("PIN 需为 6 位数字");
     const pinHash = await createPinHash(pin);
     await saveMeta({ pinHash, lockEnabled: true, lockGraceUntil: null });
     storedPin.current = pinHash;

@@ -2,10 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Delete, ArrowLeft, ShieldQuestion } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { explainPinError, isValidPin, MAX_ATTEMPTS, PIN_MAX, PIN_MIN } from "@/lib/lock";
+import { PinDots } from "@/components/ui/pin-dots";
+import { explainPinError, isValidPin, MAX_ATTEMPTS, PIN_LENGTH } from "@/lib/lock";
 import { cn } from "@/lib/utils";
 
 type Mode = "unlock" | "reset";
+/** 重置 PIN 的两步：设新 PIN → 再输一次 */
+type ResetStage = "first" | "confirm";
 
 export interface LockScreenProps {
   onUnlock: (pin: string, remember: boolean) => Promise<"ok" | "wrong" | "locked">;
@@ -18,10 +21,14 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "空", "0", "删"];
 
 /**
  * PIN 锁屏（§4.2）：自建 3×4 数字键盘，不用系统 input，避免自动填充与键盘跳动。
- * 桌面端同样适用，支持实体键盘输入与回车提交。
+ *
+ * PIN 定长 6 位（`PIN_LENGTH`），所以圆点永远是 6 个、键盘最多收 6 位、
+ * 输满第 6 位自动校验——三者由同一个常量推导，不可能再出现
+ * 「输入的位数和圆点总数对不上」这种漂移。桌面端支持实体键盘与回车提交。
  */
 export function LockScreen({ onUnlock, onReset, lockoutLeft, failures }: LockScreenProps) {
   const [mode, setMode] = useState<Mode>("unlock");
+  const [resetStage, setResetStage] = useState<ResetStage>("first");
   const [pin, setPin] = useState("");
   const [confirm, setConfirm] = useState("");
   const [remember, setRemember] = useState(false);
@@ -30,9 +37,8 @@ export function LockScreen({ onUnlock, onReset, lockoutLeft, failures }: LockScr
   const [busy, setBusy] = useState(false);
 
   const locked = lockoutLeft > 0;
-  const target = mode === "unlock" ? PIN_MAX : PIN_MAX;
-  const stage = mode === "reset" && confirm.length > 0 ? "confirm" : "first";
-  const current = mode === "reset" && stage === "confirm" ? confirm : pin;
+  /** 当前正在输入的那一串：重置第二步看 confirm，其余都看 pin */
+  const typed = mode === "reset" && resetStage === "confirm" ? confirm : pin;
 
   const triggerShake = useCallback(() => {
     setShake(true);
@@ -40,10 +46,11 @@ export function LockScreen({ onUnlock, onReset, lockoutLeft, failures }: LockScr
   }, []);
 
   const submit = useCallback(async () => {
-    if (busy) return;
+    if (busy || locked) return;
+
     if (mode === "unlock") {
-      if (pin.length < PIN_MIN) {
-        setError("PIN 至少 4 位");
+      if (!isValidPin(pin)) {
+        setError(`PIN 是 ${PIN_LENGTH} 位数字`);
         triggerShake();
         return;
       }
@@ -65,20 +72,27 @@ export function LockScreen({ onUnlock, onReset, lockoutLeft, failures }: LockScr
     }
 
     // reset：两步确认
-    if (stage === "first") {
+    if (resetStage === "first") {
       if (!isValidPin(pin)) {
-        setError(`PIN 需为 ${PIN_MIN}–${PIN_MAX} 位数字`);
+        setError(`新 PIN 需为 ${PIN_LENGTH} 位数字`);
         triggerShake();
         return;
       }
       setConfirm("");
       setError("");
+      setResetStage("confirm");
+      return;
+    }
+    if (confirm.length < PIN_LENGTH) {
+      setError(`请再输满 ${PIN_LENGTH} 位`);
+      triggerShake();
       return;
     }
     if (pin !== confirm) {
       setError("两次输入不一致，请重新设置");
       setPin("");
       setConfirm("");
+      setResetStage("first");
       triggerShake();
       return;
     }
@@ -91,29 +105,39 @@ export function LockScreen({ onUnlock, onReset, lockoutLeft, failures }: LockScr
     } finally {
       setBusy(false);
     }
-  }, [busy, confirm, mode, onReset, onUnlock, pin, remember, stage, triggerShake]);
+  }, [busy, confirm, locked, mode, onReset, onUnlock, pin, remember, resetStage, triggerShake]);
+
+  // 输满 6 位自动提交，不用再点按钮
+  useEffect(() => {
+    if (busy || locked) return;
+    if (typed.length !== PIN_LENGTH) return;
+    void submit();
+  }, [busy, locked, submit, typed.length]);
 
   const press = useCallback(
     (key: string) => {
       if (locked || busy) return;
       if (key === "删") {
-        if (current.length === 0 && mode === "reset" && stage === "confirm") {
-          setConfirm("");
-          setPin("");
+        if (typed.length === 0) {
+          // 确认阶段删空 → 回到「设新 PIN」，不必从解锁页重来
+          if (mode === "reset" && resetStage === "confirm") {
+            setResetStage("first");
+            setError("");
+          }
           return;
         }
-        if (mode === "reset" && stage === "confirm") setConfirm((v) => v.slice(0, -1));
+        if (mode === "reset" && resetStage === "confirm") setConfirm((v) => v.slice(0, -1));
         else setPin((v) => v.slice(0, -1));
         setError("");
         return;
       }
       if (key === "空") return;
-      if (current.length >= target) return;
-      if (mode === "reset" && stage === "confirm") setConfirm((v) => v + key);
+      if (typed.length >= PIN_LENGTH) return;
+      if (mode === "reset" && resetStage === "confirm") setConfirm((v) => v + key);
       else setPin((v) => v + key);
       setError("");
     },
-    [busy, current.length, locked, mode, stage, target],
+    [busy, locked, mode, resetStage, typed.length],
   );
 
   // 实体键盘
@@ -137,48 +161,25 @@ export function LockScreen({ onUnlock, onReset, lockoutLeft, failures }: LockScr
     return () => window.removeEventListener("keydown", onKey);
   }, [press, submit]);
 
-  const dots = mode === "reset" && stage === "confirm" ? confirm : pin;
+  const title =
+    mode === "unlock" ? "输入 PIN" : resetStage === "first" ? "重置访问密码" : "再输入一次";
+  const hint =
+    mode === "unlock"
+      ? `本机隐私锁屏 · ${PIN_LENGTH} 位数字`
+      : resetStage === "first"
+        ? `直接设置新的 ${PIN_LENGTH} 位 PIN`
+        : "再输一次确认";
 
   return (
     <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-paper px-6 py-10">
-      <div
-        className={cn(
-          "w-full max-w-[320px]",
-          shake && "animate-shake",
-        )}
-      >
+      <div className={cn("w-full max-w-[320px]", shake && "animate-shake")}>
         <div className="text-center">
-          <h1 className="word-serif text-[22px] font-semibold text-ink">
-            {mode === "unlock" ? "输入 PIN" : "重置访问密码"}
-          </h1>
-          <p className="mt-1.5 text-[13px] leading-6 text-ink-soft">
-            {mode === "unlock"
-              ? "本机隐私锁屏，仅防止随手翻看"
-              : stage === "first"
-                ? "直接设置新 PIN"
-                : "再输入一次确认"}
-          </p>
+          <h1 className="word-serif text-[22px] font-semibold text-ink">{title}</h1>
+          <p className="mt-1.5 text-[13px] leading-6 text-ink-soft">{hint}</p>
         </div>
 
-        {/* 圆点显示已输入位数 */}
-        <div
-          className="mt-7 flex items-center justify-center gap-3"
-          role="status"
-          aria-live="polite"
-          aria-label={`已输入 ${dots.length} 位`}
-        >
-          {Array.from({ length: Math.max(PIN_MIN, dots.length) }).map((_, index) => (
-            <span
-              key={index}
-              className={cn(
-                "h-3 w-3 rounded-full border transition-colors",
-                index < dots.length
-                  ? "border-brand bg-brand"
-                  : "border-ink-mute/50 bg-transparent",
-              )}
-            />
-          ))}
-        </div>
+        {/* 圆点：固定 6 个，填满即校验 */}
+        <PinDots total={PIN_LENGTH} filled={typed.length} className="mt-7" />
 
         <p
           className={cn(
@@ -221,9 +222,9 @@ export function LockScreen({ onUnlock, onReset, lockoutLeft, failures }: LockScr
           className="mt-4 w-full"
           size="lg"
           onClick={() => void submit()}
-          disabled={locked || busy || dots.length < PIN_MIN}
+          disabled={locked || busy || typed.length < PIN_LENGTH}
         >
-          {mode === "unlock" ? "解锁" : stage === "first" ? "下一步" : "保存新 PIN"}
+          {mode === "unlock" ? "解锁" : resetStage === "first" ? "下一步" : "保存新 PIN"}
         </Button>
 
         <label className="mt-4 flex min-h-11 cursor-pointer items-center justify-center gap-2 text-[13px] text-ink-soft">
@@ -241,6 +242,7 @@ export function LockScreen({ onUnlock, onReset, lockoutLeft, failures }: LockScr
             size="sm"
             onClick={() => {
               setMode(mode === "unlock" ? "reset" : "unlock");
+              setResetStage("first");
               setPin("");
               setConfirm("");
               setError("");
