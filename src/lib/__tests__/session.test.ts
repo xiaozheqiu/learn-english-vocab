@@ -6,13 +6,35 @@ import type { DayRecord, SrsCardRecord, Word } from "../types";
 const NOW = new Date("2026-03-10T10:00:00+08:00");
 
 function w(key: string): Word {
-  return { key, level: "A1", word: key.split("|")[1] ?? key, pos: "n.", cn: "释义", scope: "3000", seq: "" };
-}
-function card(key: string, dueOffsetDays: number, extra: Partial<SrsCardRecord> = {}): SrsCardRecord {
   return {
-    key, due: NOW.getTime() + dueOffsetDays * 86_400_000, stability: 10, difficulty: 5,
-    elapsed_days: 0, scheduled_days: 10, learning_steps: 0, reps: 3, lapses: 0, state: 2,
-    right: 2, wrong: 1, ...extra,
+    key,
+    level: "A1",
+    word: key.split("|")[1] ?? key,
+    pos: "n.",
+    cn: "释义",
+    scope: "3000",
+    seq: "",
+  };
+}
+function card(
+  key: string,
+  dueOffsetDays: number,
+  extra: Partial<SrsCardRecord> = {},
+): SrsCardRecord {
+  return {
+    key,
+    due: NOW.getTime() + dueOffsetDays * 86_400_000,
+    stability: 10,
+    difficulty: 5,
+    elapsed_days: 0,
+    scheduled_days: 10,
+    learning_steps: 0,
+    reps: 3,
+    lapses: 0,
+    state: 2,
+    right: 2,
+    wrong: 1,
+    ...extra,
   };
 }
 function day(d: string, reviewed: number): DayRecord {
@@ -28,8 +50,11 @@ describe("复习队列", () => {
       ["k3", card("k3", -2)],
     ]);
     const plan = buildReviewPlan({
-      words, records, mastered: new Map([["k3", NOW.getTime()]]),
-      prefs: { reviewSize: 50, retention: 0.9 }, now: NOW,
+      words,
+      records,
+      mastered: new Map([["k3", NOW.getTime()]]),
+      prefs: { reviewSize: 50, retention: 0.9 },
+      now: NOW,
     });
     expect(plan.items.map((i) => i.word.key)).toEqual(["k1"]);
   });
@@ -42,8 +67,11 @@ describe("复习队列", () => {
       ["c", card("c", -2, { stability: 100 })],
     ]);
     const plan = buildReviewPlan({
-      words, records, mastered: new Map(),
-      prefs: { reviewSize: 50, retention: 0.9 }, now: NOW,
+      words,
+      records,
+      mastered: new Map(),
+      prefs: { reviewSize: 50, retention: 0.9 },
+      now: NOW,
     });
     // b 的 R 最低（stability 小、逾期久），排最前
     expect(plan.items[0]!.word.key).toBe("b");
@@ -55,8 +83,11 @@ describe("复习队列", () => {
     const words = [w("n1"), w("n2"), w("n3")];
     // 题量 50 > 词数 3，全部新词都进队 —— 不再受「今天已学几个」限制
     const plan = buildReviewPlan({
-      words, records: new Map(), mastered: new Map(),
-      prefs: { reviewSize: 50, retention: 0.9 }, now: NOW,
+      words,
+      records: new Map(),
+      mastered: new Map(),
+      prefs: { reviewSize: 50, retention: 0.9 },
+      now: NOW,
     });
     expect(plan.items).toHaveLength(3);
     expect(plan.newTotal).toBe(3);
@@ -64,8 +95,11 @@ describe("复习队列", () => {
     // 题量小于词数时按题量截断；新词被批处理不算「欠账」，
     // carryOver 只表示「到期卡装不下」
     const limited = buildReviewPlan({
-      words, records: new Map(), mastered: new Map(),
-      prefs: { reviewSize: 2, retention: 0.9 }, now: NOW,
+      words,
+      records: new Map(),
+      mastered: new Map(),
+      prefs: { reviewSize: 2, retention: 0.9 },
+      now: NOW,
     });
     expect(limited.items).toHaveLength(2);
     expect(limited.carryOver).toBe(0);
@@ -74,8 +108,11 @@ describe("复习队列", () => {
   it("一轮里的新词最多一批（默认 20），不做每日配额", () => {
     const many = Array.from({ length: 50 }, (_, i) => w(`n${i}`));
     const plan = buildReviewPlan({
-      words: many, records: new Map(), mastered: new Map(),
-      prefs: { reviewSize: 300, retention: 0.9 }, now: NOW,
+      words: many,
+      records: new Map(),
+      mastered: new Map(),
+      prefs: { reviewSize: 300, retention: 0.9 },
+      now: NOW,
     });
     // 一轮只给 20 个新词，其余顺延到下一轮
     expect(plan.items).toHaveLength(Math.min(20, many.length));
@@ -86,17 +123,24 @@ describe("复习队列", () => {
       // 模拟已学掉前 20 个
       records: new Map(many.slice(0, 20).map((word) => [word.key, card(word.key, 3)])),
       mastered: new Map(),
-      prefs: { reviewSize: 300, retention: 0.9 }, now: NOW,
+      prefs: { reviewSize: 300, retention: 0.9 },
+      now: NOW,
     });
     expect(next.newTotal).toBe(Math.min(20, many.length - 20));
   });
 
   it("按单次题量截断，到期优先于新词", () => {
     const words = [w("d1"), w("d2"), w("n1"), w("n2")];
-    const records = new Map([["d1", card("d1", -1)], ["d2", card("d2", -1, { stability: 50 })]]);
+    const records = new Map([
+      ["d1", card("d1", -1)],
+      ["d2", card("d2", -1, { stability: 50 })],
+    ]);
     const plan = buildReviewPlan({
-      words, records, mastered: new Map(),
-      prefs: { reviewSize: 3, retention: 0.9 }, now: NOW,
+      words,
+      records,
+      mastered: new Map(),
+      prefs: { reviewSize: 3, retention: 0.9 },
+      now: NOW,
     });
     expect(plan.items).toHaveLength(3);
     // 到期卡先占满位置，剩下的 1 个位置给新词
@@ -111,8 +155,11 @@ describe("积压可见", () => {
     const words = Array.from({ length: 12 }, (_, i) => w(`k${i}`));
     const records = new Map(words.map((word) => [word.key, card(word.key, -1, { stability: 3 })]));
     const plan = buildReviewPlan({
-      words, records, mastered: new Map(),
-      prefs: { reviewSize: 8, retention: 0.9 }, now: NOW,
+      words,
+      records,
+      mastered: new Map(),
+      prefs: { reviewSize: 8, retention: 0.9 },
+      now: NOW,
     });
     expect(plan.items).toHaveLength(8);
     expect(plan.dueTotal).toBe(12);
@@ -121,10 +168,16 @@ describe("积压可见", () => {
 
   it("做得完就没有欠账", () => {
     const words = [w("k1"), w("k2")];
-    const records = new Map([["k1", card("k1", -1)], ["k2", card("k2", -1, { stability: 20 })]]);
+    const records = new Map([
+      ["k1", card("k1", -1)],
+      ["k2", card("k2", -1, { stability: 20 })],
+    ]);
     const plan = buildReviewPlan({
-      words, records, mastered: new Map(),
-      prefs: { reviewSize: 300, retention: 0.9 }, now: NOW,
+      words,
+      records,
+      mastered: new Map(),
+      prefs: { reviewSize: 300, retention: 0.9 },
+      now: NOW,
     });
     expect(plan.carryOver).toBe(0);
   });
@@ -211,10 +264,16 @@ describe("统计", () => {
       ["k1", card("k1", 0, { due: NOW.getTime() - 1000 })],
       ["k2", card("k2", 2)],
     ]);
-    const days = new Map([[dayKey(NOW), { day: dayKey(NOW), reviewed: 10, correct: 7, wrong: 3, newWords: 4 }]]);
+    const days = new Map([
+      [dayKey(NOW), { day: dayKey(NOW), reviewed: 10, correct: 7, wrong: 3, newWords: 4 }],
+    ]);
     const stats = computeStats({
-      words, records, mastered: new Map([["k3", NOW.getTime()]]), days,
-      prefs: { retention: 0.9 }, now: NOW,
+      words,
+      records,
+      mastered: new Map([["k3", NOW.getTime()]]),
+      days,
+      prefs: { retention: 0.9 },
+      now: NOW,
     });
     expect(stats.todayReviewed).toBe(10);
     expect(stats.todayAccuracy).toBeCloseTo(0.7, 5);
@@ -229,8 +288,12 @@ describe("统计", () => {
 
   it("无数据时平均留存率为 0 且不 NaN", () => {
     const stats = computeStats({
-      words: [], records: new Map(), mastered: new Map(), days: new Map(),
-      prefs: { retention: 0.9 }, now: NOW,
+      words: [],
+      records: new Map(),
+      mastered: new Map(),
+      days: new Map(),
+      prefs: { retention: 0.9 },
+      now: NOW,
     });
     expect(stats.averageRetrievability).toBe(0);
     expect(stats.todayAccuracy).toBe(0);

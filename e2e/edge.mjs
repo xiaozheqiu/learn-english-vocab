@@ -50,9 +50,9 @@ try {
   await page.goto(`${BASE}#/quiz`, { waitUntil: "networkidle" });
   await page.waitForTimeout(900);
   report.check("route.quizDeepLinkKept", (await page.evaluate(() => location.hash)) === "#/quiz");
-  const quizPaneReady = await page.locator(
-    '[data-testid="quiz-empty"], [data-testid="quiz-question"]',
-  ).count();
+  const quizPaneReady = await page
+    .locator('[data-testid="quiz-empty"], [data-testid="quiz-question"]')
+    .count();
   report.check("route.quizDeepLinkRenders", quizPaneReady > 0);
 
   await nav.list(page).click();
@@ -111,7 +111,11 @@ try {
   await page.getByRole("button", { name: /清空进度/ }).click();
   await until(
     page,
-    async () => (await page.locator('[role="dialog"] button').filter({ hasText: /确认|真的/ }).count()) > 0,
+    async () =>
+      (await page
+        .locator('[role="dialog"] button')
+        .filter({ hasText: /确认|真的/ })
+        .count()) > 0,
     { label: "wipe confirm" },
   );
   report.check("data.wipeNeedsConfirm", true);
@@ -149,10 +153,7 @@ try {
   await nav.panel(page).click();
   await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel 3" });
   await page.getByRole("tab").filter({ hasText: /学习/ }).click();
-  report.check(
-    "panel.noNewWordsQuota",
-    (await page.locator("#pref-new-per-day").count()) === 0,
-  );
+  report.check("panel.noNewWordsQuota", (await page.locator("#pref-new-per-day").count()) === 0);
   await page.keyboard.press("Escape");
   await waitDialogClosed(page);
 

@@ -45,11 +45,7 @@ export function isMasteryRecheckDue(
 }
 
 /** 仍在免检期内的已掌握词：这些才是真正要排除的 */
-export function isShelved(
-  mastered: ReadonlyMap<string, number>,
-  key: string,
-  now: Date,
-): boolean {
+export function isShelved(mastered: ReadonlyMap<string, number>, key: string, now: Date): boolean {
   const at = mastered.get(key);
   if (at === undefined) return false;
   return now.getTime() < masteryDueAt(at);
@@ -198,7 +194,12 @@ export function computeStats(input: StatsInput): Stats {
     const date = new Date(`${day}T00:00:00`);
     const end = new Date(date);
     end.setDate(end.getDate() + 1);
-    return { day, label: day === dayKey(now) ? "今天" : WEEK_LABELS[date.getDay()] ?? "", start: date.getTime(), end: end.getTime() };
+    return {
+      day,
+      label: day === dayKey(now) ? "今天" : (WEEK_LABELS[date.getDay()] ?? ""),
+      start: date.getTime(),
+      end: end.getTime(),
+    };
   });
   const counts = new Array<number>(bounds.length).fill(0);
 
@@ -237,14 +238,11 @@ export function computeStats(input: StatsInput): Stats {
   return {
     todayReviewed: today?.reviewed ?? 0,
     todayCorrect: today?.correct ?? 0,
-    todayAccuracy:
-      today && today.reviewed > 0 ? today.correct / today.reviewed : 0,
+    todayAccuracy: today && today.reviewed > 0 ? today.correct / today.reviewed : 0,
     streak: computeStreak(input.days, now),
     learned,
     masteryCount: input.mastered.size,
-    averageRetrievability: scored.length
-      ? scored.reduce((a, b) => a + b, 0) / scored.length
-      : 0,
+    averageRetrievability: scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : 0,
     forecast,
     dueToday,
     newToday: today?.newWords ?? 0,

@@ -54,11 +54,7 @@ try {
   report.check("list.rendersPage", (await rowCount(page)) === 20);
 
   // 每行只有一个「掌握」切换按钮（曾经出现过同功能两个控件）
-  const rowButtons = await page
-    .locator('[role="row"][data-key]')
-    .first()
-    .locator("button")
-    .count();
+  const rowButtons = await page.locator('[role="row"][data-key]').first().locator("button").count();
   report.check("list.rowHasTwoActions", rowButtons === 2, `buttons=${rowButtons}`);
 
   // 掌握切换：按 aria-pressed 判断，不读文案
@@ -70,11 +66,9 @@ try {
     .last();
   const before = await masteryBtn.getAttribute("aria-pressed");
   await masteryBtn.click();
-  await until(
-    page,
-    async () => (await masteryBtn.getAttribute("aria-pressed")) !== before,
-    { label: "mastery toggled" },
-  );
+  await until(page, async () => (await masteryBtn.getAttribute("aria-pressed")) !== before, {
+    label: "mastery toggled",
+  });
   report.check("list.masteryToggles", (await masteryBtn.getAttribute("aria-pressed")) === "true");
   await masteryBtn.click();
   await page.waitForTimeout(200);
@@ -154,7 +148,8 @@ try {
   await until(
     page,
     async () =>
-      (await page.locator('[data-testid="review-running"], [data-testid="review-empty"]').count()) > 0,
+      (await page.locator('[data-testid="review-running"], [data-testid="review-empty"]').count()) >
+      0,
     { label: "review ready" },
   );
   report.check("review.hasQueue", (await reviewRunning(page).count()) === 1);
@@ -178,7 +173,11 @@ try {
     },
     { label: "requeue on fail" },
   );
-  report.check("review.requeuesOnFail", totalAfterFail === queued + 1, `${queued} → ${totalAfterFail}`);
+  report.check(
+    "review.requeuesOnFail",
+    totalAfterFail === queued + 1,
+    `${queued} → ${totalAfterFail}`,
+  );
 
   // 撤销 → 回到原队列长度。
   // 必须等它真的变，否则 until 会在第一帧就返回当时（还没撤销完）的值。
@@ -189,13 +188,18 @@ try {
     { label: "undo restores queue" },
   );
   const totalAfterUndo = Number(await reviewRunning(page).getAttribute("data-total"));
-  report.check("review.undoRestoresQueue", totalAfterUndo === queued, `${totalAfterFail} → ${totalAfterUndo}`);
+  report.check(
+    "review.undoRestoresQueue",
+    totalAfterUndo === queued,
+    `${totalAfterFail} → ${totalAfterUndo}`,
+  );
 
   /* ── 6. 测试：零基础不出题 → 学完才出题，且只考已学 ─────── */
   await nav.quiz(page).click();
   await until(
     page,
-    async () => (await page.locator('[data-testid="quiz-empty"], [data-testid="quiz-question"]').count()) > 0,
+    async () =>
+      (await page.locator('[data-testid="quiz-empty"], [data-testid="quiz-question"]').count()) > 0,
     { label: "quiz ready" },
   );
   // 此前未学任何词（刚撤销过，records 仍是 0）：必须是空态且原因是 no-studied-words
@@ -205,7 +209,11 @@ try {
     .catch(() => null);
   const hasQuestionBefore = (await page.locator('[data-testid="quiz-question"]').count()) > 0;
   if (!hasQuestionBefore) {
-    report.check("quiz.blocksWithoutStudy", emptyReason === "no-studied-words", `reason=${emptyReason}`);
+    report.check(
+      "quiz.blocksWithoutStudy",
+      emptyReason === "no-studied-words",
+      `reason=${emptyReason}`,
+    );
   } else {
     // 若已有学习记录（上一轮撤销后仍保留卡片），跳过这条而不是伪造前置条件
     report.note("quiz.blocksWithoutStudy", "skipped: words already studied in this session");
@@ -216,7 +224,10 @@ try {
   await until(page, async () => (await reviewRunning(page).count()) > 0, { label: "review back" });
   const round = await reviewWholeRound(page);
   if (!round.done) {
-    report.fail("review.finishesRound", `stuck after ${round.steps}: ${JSON.stringify(round.stuckAt)}`);
+    report.fail(
+      "review.finishesRound",
+      `stuck after ${round.steps}: ${JSON.stringify(round.stuckAt)}`,
+    );
   }
   await until(page, async () => (await reviewDone(page).count()) > 0, { label: "review done" });
   const reviewed = Number(await reviewDone(page).getAttribute("data-reviewed"));
@@ -266,9 +277,17 @@ try {
     if (m) askedPrompts.push(m[1].trim());
     const choice = page.locator("main ul li button").first();
     if (await choice.count()) await choice.first().click();
-    else await page.getByRole("button", { name: /不会，看答案/ }).click().catch(() => {});
+    else
+      await page
+        .getByRole("button", { name: /不会，看答案/ })
+        .click()
+        .catch(() => {});
     await page.waitForTimeout(80);
-    await page.getByRole("button", { name: /下一题|查看结果/ }).first().click().catch(() => {});
+    await page
+      .getByRole("button", { name: /下一题|查看结果/ })
+      .first()
+      .click()
+      .catch(() => {});
     await page.waitForTimeout(120);
   }
   if (studiedWords.length > 0) {
@@ -279,18 +298,27 @@ try {
       `asked=${askedPrompts.length} outsiders=${outsiders.slice(0, 3).join(",")}`,
     );
   } else {
-    report.note("quiz.onlyAsksStudiedWords", "skipped: 生产构建无 /src 模块，等价检查见 quiz.sizeEqualsStudiedWords");
+    report.note(
+      "quiz.onlyAsksStudiedWords",
+      "skipped: 生产构建无 /src 模块，等价检查见 quiz.sizeEqualsStudiedWords",
+    );
   }
 
   /* ── 7. 常驻面板：切页保留状态 ───────────────────────────── */
   await nav.quiz(page).click();
-  const snapshotBefore = await page.locator('[data-testid="quiz-question"]').getAttribute("data-index").catch(() => null);
+  const snapshotBefore = await page
+    .locator('[data-testid="quiz-question"]')
+    .getAttribute("data-index")
+    .catch(() => null);
   const quizText = await page.locator("main").innerText();
   await nav.list(page).click();
   await page.waitForTimeout(300);
   await nav.quiz(page).click();
   await page.waitForTimeout(500);
-  const snapshotAfter = await page.locator('[data-testid="quiz-question"]').getAttribute("data-index").catch(() => null);
+  const snapshotAfter = await page
+    .locator('[data-testid="quiz-question"]')
+    .getAttribute("data-index")
+    .catch(() => null);
   report.check(
     "tabs.preserveQuizState",
     quizText === (await page.locator("main").innerText()),
@@ -302,10 +330,22 @@ try {
   await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel" });
   const dialog = nav.dialog(page);
   report.check("panel.tabCount", (await page.getByRole("tab").count()) === 4);
-  report.check("panel.hasCoverageCard", (await dialog.locator('[data-testid="coverage-card"]').count()) === 1);
-  report.check("panel.hasReviewSize", (await dialog.locator('[data-testid="review-size-group"]').count()) === 1);
-  report.check("panel.hasQuizSize", (await dialog.locator('[data-testid="quiz-size-group"]').count()) === 1);
-  report.check("panel.hasQuizTypes", (await dialog.locator('[data-testid="quiz-type-group"]').count()) === 1);
+  report.check(
+    "panel.hasCoverageCard",
+    (await dialog.locator('[data-testid="coverage-card"]').count()) === 1,
+  );
+  report.check(
+    "panel.hasReviewSize",
+    (await dialog.locator('[data-testid="review-size-group"]').count()) === 1,
+  );
+  report.check(
+    "panel.hasQuizSize",
+    (await dialog.locator('[data-testid="quiz-size-group"]').count()) === 1,
+  );
+  report.check(
+    "panel.hasQuizTypes",
+    (await dialog.locator('[data-testid="quiz-type-group"]').count()) === 1,
+  );
   report.check(
     "panel.noNewWordsQuota",
     (await dialog.locator("#pref-new-per-day").count()) === 0,

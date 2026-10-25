@@ -101,8 +101,13 @@ describe("偏好归一与迁移", () => {
 
   it("已经是新结构时原样保留", () => {
     const prefs = normalizePrefs({
-      pageSize: 50, defaultLevel: "B2", reviewSize: 200, quizSize: 30,
-      retention: 0.92, autoLockMinutes: 0, quizTypes: ["spell"],
+      pageSize: 50,
+      defaultLevel: "B2",
+      reviewSize: 200,
+      quizSize: 30,
+      retention: 0.92,
+      autoLockMinutes: 0,
+      quizTypes: ["spell"],
     });
     expect(prefs.reviewSize).toBe(200);
     expect(prefs.quizSize).toBe(30);

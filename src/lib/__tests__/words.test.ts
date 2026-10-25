@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  acceptedSpellings, buildKeys, normalizeSpelling, posTags,
-  primaryMeaning, samePos,
+  acceptedSpellings,
+  buildKeys,
+  normalizeSpelling,
+  posTags,
+  primaryMeaning,
+  samePos,
 } from "../words";
 import type { RawRow } from "../types";
 
@@ -66,9 +70,25 @@ describe("释义与词性", () => {
   });
 
   it("samePos 有交集即同词性", () => {
-    const a = { key: "a", level: "A1", word: "x", pos: "n., v.", cn: "", scope: "", seq: "" } as const;
+    const a = {
+      key: "a",
+      level: "A1",
+      word: "x",
+      pos: "n., v.",
+      cn: "",
+      scope: "",
+      seq: "",
+    } as const;
     const b = { key: "b", level: "A1", word: "y", pos: "v.", cn: "", scope: "", seq: "" } as const;
-    const c = { key: "c", level: "A1", word: "z", pos: "adj.", cn: "", scope: "", seq: "" } as const;
+    const c = {
+      key: "c",
+      level: "A1",
+      word: "z",
+      pos: "adj.",
+      cn: "",
+      scope: "",
+      seq: "",
+    } as const;
     expect(samePos(a, b)).toBe(true);
     expect(samePos(a, c)).toBe(false);
   });

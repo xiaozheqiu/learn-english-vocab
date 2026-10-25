@@ -191,9 +191,7 @@ export function LockScreen({ onUnlock, onReset, lockoutLeft, failures }: LockScr
           {locked
             ? `尝试次数过多，${Math.ceil(lockoutLeft / 1000)} 秒后可重试`
             : error ||
-              (mode === "unlock" && failures > 0
-                ? `还可尝试 ${MAX_ATTEMPTS - failures} 次`
-                : "")}
+              (mode === "unlock" && failures > 0 ? `还可尝试 ${MAX_ATTEMPTS - failures} 次` : "")}
         </p>
 
         {/* 3×4 数字键盘 */}

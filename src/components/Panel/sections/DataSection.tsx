@@ -1,12 +1,5 @@
 import { useRef, useState } from "react";
-import {
-  CheckCircle2,
-  FileDown,
-  FileUp,
-  MonitorDown,
-  Trash2,
-  TriangleAlert,
-} from "lucide-react";
+import { CheckCircle2, FileDown, FileUp, MonitorDown, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { parseExport } from "@/lib/db";
 import { dayKey } from "@/lib/date";
@@ -248,7 +241,8 @@ export function DataSection({
           清空学习进度
         </h3>
         <p className="mt-0.5 text-[12px] leading-5 text-ink-soft">
-          删除已掌握标记、FSRS 卡片与作答流水。<strong className="font-medium text-ink">偏好和锁屏 PIN 会保留</strong>
+          删除已掌握标记、FSRS 卡片与作答流水。
+          <strong className="font-medium text-ink">偏好和锁屏 PIN 会保留</strong>
           ，词表本身不受影响。
         </p>
 

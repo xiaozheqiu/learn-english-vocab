@@ -164,10 +164,7 @@ export function QuizPage({
 
   const types = normalizeTypes(store.prefs.quizTypes);
   // 可出题的池子 = 学过的词，不是全库
-  const studiedCount = store.words.reduce(
-    (n, w) => (store.records.has(w.key) ? n + 1 : n),
-    0,
-  );
+  const studiedCount = store.words.reduce((n, w) => (store.records.has(w.key) ? n + 1 : n), 0);
   const poolReady = store.ready && studiedCount >= MIN_POOL;
   const canBuild = poolReady && types.length > 0;
 
@@ -321,13 +318,7 @@ const emptyAnswer = (): AnswerState => ({
   judgement: null,
 });
 
-function QuizRunner({
-  questions,
-  onGrade,
-  onRestart,
-  onRetryWrong,
-  onGoReview,
-}: RunnerProps) {
+function QuizRunner({ questions, onGrade, onRestart, onRetryWrong, onGoReview }: RunnerProps) {
   const [index, setIndex] = useState(0);
   const [results, setResults] = useState<QuizAnswerResult[]>([]);
   const [answer, setAnswer] = useState<AnswerState>(emptyAnswer);

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronUp, Minimize2, Settings2, X } from "lucide-react";
-import { Dialog, DialogClose, DialogDescription, DialogTitle, SheetContent } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogTitle,
+  SheetContent,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { AboutSection } from "./sections/AboutSection";
@@ -125,9 +131,7 @@ export function FloatingPanel({
             </span>
             <div className="min-w-0 flex-1">
               {/* id / aria-labelledby 交给 Radix 生成，避免和外层 aria-labelledby 打架 */}
-              <DialogTitle className="text-[14px] font-semibold text-ink">
-                学习面板
-              </DialogTitle>
+              <DialogTitle className="text-[14px] font-semibold text-ink">学习面板</DialogTitle>
               <DialogDescription className="truncate text-[11px] text-ink-mute tnum">
                 今日复习 {stats.todayReviewed} · 待复习 {stats.dueToday} · 连续 {stats.streak} 天
               </DialogDescription>

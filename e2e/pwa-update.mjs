@@ -40,10 +40,16 @@ async function buildFixtures() {
   await cp(DIST, dirB, { recursive: true });
 
   const htmlB = await readFile(join(dirB, "index.html"), "utf8");
-  await writeFile(join(dirB, "index.html"), htmlB.replace(/<title>[^<]*<\/title>/, "<title>BUILD-B</title>"));
+  await writeFile(
+    join(dirB, "index.html"),
+    htmlB.replace(/<title>[^<]*<\/title>/, "<title>BUILD-B</title>"),
+  );
 
   const swB = await readFile(join(dirB, "sw.js"), "utf8");
-  await writeFile(join(dirB, "sw.js"), swB.replace(/(index\.html",revision:")[a-f0-9]{32}/, "$1ffffffffffffffffffffffffffffffff"));
+  await writeFile(
+    join(dirB, "sw.js"),
+    swB.replace(/(index\.html",revision:")[a-f0-9]{32}/, "$1ffffffffffffffffffffffffffffffff"),
+  );
 
   return { base, dirA, dirB };
 }
@@ -157,8 +163,14 @@ try {
   if (appeared) {
     const text = (await dialog.innerText()).replace(/\s+/g, " ").trim();
     report.note("dialogText", text);
-    report.check("update.hasApplyButton", await dialog.getByRole("button", { name: "立即更新" }).isVisible());
-    report.check("update.hasLaterButton", await dialog.getByRole("button", { name: "稍后" }).isVisible());
+    report.check(
+      "update.hasApplyButton",
+      await dialog.getByRole("button", { name: "立即更新" }).isVisible(),
+    );
+    report.check(
+      "update.hasLaterButton",
+      await dialog.getByRole("button", { name: "稍后" }).isVisible(),
+    );
 
     /* ── 4.5 先验「稍后」：弹框关掉，页面不重载 ───────────── */
     await dialog.getByRole("button", { name: "稍后" }).click();

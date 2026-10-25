@@ -42,8 +42,16 @@ describe("加权抽样", () => {
     const records = new Map<string, SrsCardRecord>();
     for (const w of words) {
       records.set(w.key, {
-        key: w.key, due: 0, stability: 1, difficulty: 5, elapsed_days: 0,
-        scheduled_days: 1, learning_steps: 0, reps: 3, lapses: 0, state: 2,
+        key: w.key,
+        due: 0,
+        stability: 1,
+        difficulty: 5,
+        elapsed_days: 0,
+        scheduled_days: 1,
+        learning_steps: 0,
+        reps: 3,
+        lapses: 0,
+        state: 2,
         right: w.key === "A1|abandon|v." ? 0 : 8,
         wrong: w.key === "A1|abandon|v." ? 8 : 0,
       });

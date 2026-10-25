@@ -5,13 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { loadSnapshot } from "@/lib/db";
 import { explainPinError, isValidPin, PIN_LENGTH, pinHashBackend, verifyPin } from "@/lib/lock";
-import {
-  LEVELS,
-  PAGE_SIZES,
-  type LevelFilter,
-  type PageSize,
-  type Prefs,
-} from "@/lib/types";
+import { LEVELS, PAGE_SIZES, type LevelFilter, type PageSize, type Prefs } from "@/lib/types";
 import type { LockApi } from "@/hooks/useLock";
 import type { VocabStore } from "@/hooks/useVocabStore";
 import { cn } from "@/lib/utils";
@@ -158,9 +152,7 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
           <Select
             id="pref-default-level"
             value={prefs.defaultLevel}
-            onChange={(event) =>
-              void setPrefs({ defaultLevel: event.target.value as LevelFilter })
-            }
+            onChange={(event) => void setPrefs({ defaultLevel: event.target.value as LevelFilter })}
             className="h-11 w-[104px]"
           >
             {levelOptions.map((option) => (
@@ -176,7 +168,10 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
       </section>
 
       {/* 锁屏 */}
-      <section aria-labelledby="settings-lock-title" className="space-y-2 border-t border-line pt-4">
+      <section
+        aria-labelledby="settings-lock-title"
+        className="space-y-2 border-t border-line pt-4"
+      >
         <h3 id="settings-lock-title" className="text-[13px] font-medium text-ink">
           锁屏
         </h3>
@@ -226,7 +221,10 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
 
         {confirmDisable && lock.lockEnabled && (
           <div className="rounded-btn border border-due/30 bg-due-wash px-3 py-2.5">
-            <p className="flex items-start gap-1.5 text-[12px] font-medium leading-5 text-due" role="alert">
+            <p
+              className="flex items-start gap-1.5 text-[12px] font-medium leading-5 text-due"
+              role="alert"
+            >
               <ShieldQuestion className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               关闭后任何人拿起这台设备都能直接看词表与进度。
             </p>
@@ -411,7 +409,10 @@ export function SettingsSection({ prefs, setPrefs, lock, onLockNow }: SettingsSe
         )}
 
         {pinNotice && (
-          <p className="rounded-btn border border-brand/25 bg-brand-wash px-3 py-2 text-[12px] leading-5 text-brand-ink" role="status">
+          <p
+            className="rounded-btn border border-brand/25 bg-brand-wash px-3 py-2 text-[12px] leading-5 text-brand-ink"
+            role="status"
+          >
             {pinNotice}
           </p>
         )}

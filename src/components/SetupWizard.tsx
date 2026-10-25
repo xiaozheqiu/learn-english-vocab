@@ -8,12 +8,7 @@ import { explainPinError, isValidPin, PIN_LENGTH } from "@/lib/lock";
 import { cn } from "@/lib/utils";
 
 export interface SetupWizardProps {
-  onDone: (options: {
-    pin: string | null;
-    remember: boolean;
-    level: LevelFilter;
-
-  }) => Promise<void>;
+  onDone: (options: { pin: string | null; remember: boolean; level: LevelFilter }) => Promise<void>;
 }
 
 const LEVEL_OPTIONS: { value: LevelFilter; label: string }[] = [

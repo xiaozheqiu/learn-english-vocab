@@ -17,7 +17,9 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
           remarkPlugins={[remarkGfm]}
           components={{
             h1: ({ children }) => (
-              <h1 className="word-serif text-[24px] font-semibold leading-tight text-ink">{children}</h1>
+              <h1 className="word-serif text-[24px] font-semibold leading-tight text-ink">
+                {children}
+              </h1>
             ),
             h2: ({ children }) => (
               <h2 className="mt-8 border-b border-line pb-1.5 text-[17px] font-semibold text-ink">
@@ -55,12 +57,18 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
               ),
             table: ({ children }) => (
               <div className="mt-3 overflow-x-auto rounded-card border border-line">
-                <table className="min-w-full border-collapse text-left text-[13px] tnum">{children}</table>
+                <table className="min-w-full border-collapse text-left text-[13px] tnum">
+                  {children}
+                </table>
               </div>
             ),
-            thead: ({ children }) => <thead className="bg-brand-wash text-brand-deep">{children}</thead>,
+            thead: ({ children }) => (
+              <thead className="bg-brand-wash text-brand-deep">{children}</thead>
+            ),
             th: ({ children }) => (
-              <th className="whitespace-nowrap border-b border-line px-3 py-2 font-semibold">{children}</th>
+              <th className="whitespace-nowrap border-b border-line px-3 py-2 font-semibold">
+                {children}
+              </th>
             ),
             td: ({ children }) => (
               <td className="whitespace-nowrap border-b border-line/70 px-3 py-2 text-ink-soft last:border-b-0">

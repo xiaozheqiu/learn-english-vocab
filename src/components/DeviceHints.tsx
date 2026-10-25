@@ -17,9 +17,7 @@ export function useIsTouchPrimary(): boolean {
 /** 继续 / 提交类提示：触屏说「点」，桌面说「回车」 */
 export function ContinueHint({ className }: { className?: string }) {
   const touch = useIsTouchPrimary();
-  return (
-    <p className={className}>{touch ? "点下面的按钮继续" : "或按回车继续"}</p>
-  );
+  return <p className={className}>{touch ? "点下面的按钮继续" : "或按回车继续"}</p>;
 }
 
 /** 复习页的操作提示：桌面给键盘，触屏只说要点哪里 */
@@ -41,7 +39,5 @@ export function ChoiceHint({ className }: { className?: string }) {
 /** 拼写题的输入提示 */
 export function SpellHint({ className }: { className?: string }) {
   const touch = useIsTouchPrimary();
-  return (
-    <p className={className}>{touch ? "忽略大小写与标点" : "回车提交，忽略大小写与标点"}</p>
-  );
+  return <p className={className}>{touch ? "忽略大小写与标点" : "回车提交，忽略大小写与标点"}</p>;
 }

@@ -206,7 +206,9 @@ export async function completeSetup(page) {
 /** 复习一整轮：每题点「显示释义」再点「记得」。返回是否走到结束页 */
 export async function finishReviewRound(page, { maxSteps = 400 } = {}) {
   for (let i = 0; i < maxSteps; i += 1) {
-    if (await page.locator('section[aria-labelledby="review-done"], main [role="status"]').count()) {
+    if (
+      await page.locator('section[aria-labelledby="review-done"], main [role="status"]').count()
+    ) {
       // 结束页没有稳定 aria，用「有『再来一轮』类按钮」判断不可靠；
       // 这里靠进度条消失 + 存在回词表出口来判断
     }

@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  createPinHash, hasWebCrypto, hashPin, isValidPin, lockoutRemaining, MAX_ATTEMPTS,
-  LOCKOUT_MS, NO_ATTEMPTS, PIN_LENGTH, pinHashBackend,
-  registerFailure, timingSafeEqual, verifyPin,
+  createPinHash,
+  hasWebCrypto,
+  hashPin,
+  isValidPin,
+  lockoutRemaining,
+  MAX_ATTEMPTS,
+  LOCKOUT_MS,
+  NO_ATTEMPTS,
+  PIN_LENGTH,
+  pinHashBackend,
+  registerFailure,
+  timingSafeEqual,
+  verifyPin,
 } from "../lock";
 import { pbkdf2Sha256, sha256, toHex } from "../sha256";
 
@@ -97,9 +107,14 @@ describe("PIN 哈希的两条实现路径", () => {
     ];
     for (const [password, salt, iterations] of vectors) {
       const jsVersion = toHex(
-        await pbkdf2Sha256(new TextEncoder().encode(password), new TextEncoder().encode(salt), iterations, {
-          yieldEvery: 0,
-        }),
+        await pbkdf2Sha256(
+          new TextEncoder().encode(password),
+          new TextEncoder().encode(salt),
+          iterations,
+          {
+            yieldEvery: 0,
+          },
+        ),
       );
       // 走 hashPin 的 WebCrypto 分支（测试环境有 subtle），两条路径必须相等。
       // 用同一个原始盐：JS 版吃 UTF-8 字节，hashPin 吃同字节的十六进制表示。
@@ -111,9 +126,14 @@ describe("PIN 哈希的两条实现路径", () => {
   it("JS 版 PBKDF2 命中固定向量，防止算法被改坏", async () => {
     // node:crypto 算出的值：pbkdf2Sync("password","salt",1,32,"sha256")
     const got = toHex(
-      await pbkdf2Sha256(new TextEncoder().encode("password"), new TextEncoder().encode("salt"), 1, {
-        yieldEvery: 0,
-      }),
+      await pbkdf2Sha256(
+        new TextEncoder().encode("password"),
+        new TextEncoder().encode("salt"),
+        1,
+        {
+          yieldEvery: 0,
+        },
+      ),
     );
     expect(got).toBe("120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b");
   });

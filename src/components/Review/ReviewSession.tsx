@@ -52,8 +52,14 @@ export function ReviewSession(props: ReviewSessionProps) {
   return <ReviewRunner {...props} />;
 }
 
-function ReviewRunner({ items: initialItems, plan, store, onAgain, onGoQuiz, onExit }: ReviewSessionProps) {
-
+function ReviewRunner({
+  items: initialItems,
+  plan,
+  store,
+  onAgain,
+  onGoQuiz,
+  onExit,
+}: ReviewSessionProps) {
   // 已提交的评分栈：长度即进度指针；撤销只弹栈，进度与统计自动回退
   const [steps, setSteps] = useState<Step[]>([]);
   /**
@@ -73,7 +79,7 @@ function ReviewRunner({ items: initialItems, plan, store, onAgain, onGoQuiz, onE
   const total = items.length;
   const done = steps.length;
   const current = items[done] ?? null;
-  const record = current ? store.records.get(current.word.key) ?? current.record : null;
+  const record = current ? (store.records.get(current.word.key) ?? current.record) : null;
 
   // 预览按「库里当前的卡片」算：撤销后重新评分时，印的间隔仍然是真实排期（验收 4）。
   // record 为 null = 新词，previewGrades 自己会按空卡算，四档按钮必须照样出现。
@@ -298,15 +304,9 @@ function ReviewRunner({ items: initialItems, plan, store, onAgain, onGoQuiz, onE
 
       <div className="mt-3">
         {revealed ? (
-          <RatingBar
-            previews={previews}
-            onGrade={(grade) => void submit(grade)}
-            disabled={busy}
-          />
+          <RatingBar previews={previews} onGrade={(grade) => void submit(grade)} disabled={busy} />
         ) : (
-          <p className="text-center text-[12px] text-ink-mute">
-            先在心里回忆一遍，再显示释义
-          </p>
+          <p className="text-center text-[12px] text-ink-mute">先在心里回忆一遍，再显示释义</p>
         )}
       </div>
 

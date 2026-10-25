@@ -180,8 +180,7 @@ export async function loadSnapshot(): Promise<Snapshot> {
     const meta: MetaState = {
       lockEnabled: Boolean(metaMap.get(META_KEYS.lockEnabled) ?? DEFAULT_META.lockEnabled),
       pinHash: (metaMap.get(META_KEYS.pinHash) as MetaState["pinHash"]) ?? null,
-      lockGraceUntil:
-        (metaMap.get(META_KEYS.lockGraceUntil) as number | null | undefined) ?? null,
+      lockGraceUntil: (metaMap.get(META_KEYS.lockGraceUntil) as number | null | undefined) ?? null,
       setupDone: Boolean(metaMap.get(META_KEYS.setupDone) ?? DEFAULT_META.setupDone),
       migratedFromLocal: Boolean(
         metaMap.get(META_KEYS.migratedFromLocal) ?? DEFAULT_META.migratedFromLocal,
@@ -190,9 +189,7 @@ export async function loadSnapshot(): Promise<Snapshot> {
     };
 
     return {
-      mastery: new Map(
-        masteryRows.map((row) => [row.key, Number(row.at) || 0] as const),
-      ),
+      mastery: new Map(masteryRows.map((row) => [row.key, Number(row.at) || 0] as const)),
       srs: new Map(srsRows.map((row) => [row.key, row])),
       days: new Map(dayRows.map((row) => [row.day, row])),
       meta,
@@ -254,11 +251,7 @@ function clampPageSize(value: unknown): PageSize {
  * 距离相同时取更大的那一档：老库里的 400 在 300 / 500 之间等距，
  * 用户当初选 400 的意思是「我要多」，降成 300 等于悄悄砍掉他的量。
  */
-function clampSize<T extends number>(
-  value: unknown,
-  options: readonly T[],
-  fallback: T,
-): T {
+function clampSize<T extends number>(value: unknown, options: readonly T[], fallback: T): T {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   if (options.length === 0) return fallback;
   let best = options[0] as T;
@@ -288,9 +281,7 @@ export async function saveMastery(keys: readonly string[], mastered: boolean): P
   }
   const tx = handle.transaction("mastery", "readwrite");
   await Promise.all(
-    keys.map((key) =>
-      mastered ? tx.store.put({ key, at: Date.now() }) : tx.store.delete(key),
-    ),
+    keys.map((key) => (mastered ? tx.store.put({ key, at: Date.now() }) : tx.store.delete(key))),
   );
   await tx.done;
 }
@@ -387,7 +378,8 @@ export async function migrateLegacy(): Promise<number> {
   try {
     const raw = localStorage.getItem(LEGACY_MASTERED_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(parsed)) legacy = parsed.filter((item): item is string => typeof item === "string");
+    if (Array.isArray(parsed))
+      legacy = parsed.filter((item): item is string => typeof item === "string");
   } catch {
     legacy = [];
   }
@@ -484,13 +476,24 @@ export function parseExport(payload: unknown): ExportPayload {
   const srs = Array.isArray(obj.srs) ? obj.srs.filter(isCardRecord) : [];
   const days = Array.isArray(obj.days) ? obj.days.filter(isDayRecord) : [];
   const prefs = isPrefs(obj.prefs) ? { ...DEFAULT_PREFS, ...obj.prefs } : { ...DEFAULT_PREFS };
-  return { version: 2, exportedAt: String(obj.exportedAt ?? ""), mastery, srs, days, prefs };
+  return {
+    version: 2,
+    exportedAt: String(obj.exportedAt ?? ""),
+    mastery,
+    srs,
+    days,
+    prefs,
+  };
 }
 
 function isCardRecord(value: unknown): value is SrsCardRecord {
   if (!value || typeof value !== "object") return false;
   const card = value as Partial<SrsCardRecord>;
-  return typeof card.key === "string" && typeof card.due === "number" && typeof card.stability === "number";
+  return (
+    typeof card.key === "string" &&
+    typeof card.due === "number" &&
+    typeof card.stability === "number"
+  );
 }
 
 function isDayRecord(value: unknown): value is DayRecord {

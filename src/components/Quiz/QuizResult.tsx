@@ -97,9 +97,7 @@ export function QuizResult({ results, onRetryWrong, onRestart }: QuizResultProps
                 <p className="text-[12px] text-danger">
                   你的答案：
                   <span className="text-ink">
-                    {item.judgement.hinted
-                      ? "看了答案"
-                      : item.judgement.given.trim() || "未作答"}
+                    {item.judgement.hinted ? "看了答案" : item.judgement.given.trim() || "未作答"}
                   </span>
                 </p>
               </li>

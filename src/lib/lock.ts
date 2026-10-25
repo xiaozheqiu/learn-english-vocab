@@ -86,13 +86,9 @@ export async function hashPin(
   const salt = fromHex(saltHex);
 
   if (hasWebCrypto()) {
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(pin),
-      "PBKDF2",
-      false,
-      ["deriveBits"],
-    );
+    const key = await crypto.subtle.importKey("raw", encoder.encode(pin), "PBKDF2", false, [
+      "deriveBits",
+    ]);
     const bits = await crypto.subtle.deriveBits(
       {
         name: "PBKDF2",
@@ -252,10 +248,7 @@ export interface AttemptState {
 
 export const NO_ATTEMPTS: AttemptState = { failures: 0, lockedUntil: 0 };
 
-export function registerFailure(
-  state: AttemptState,
-  now = Date.now(),
-): AttemptState {
+export function registerFailure(state: AttemptState, now = Date.now()): AttemptState {
   const failures = state.failures + 1;
   if (failures >= MAX_ATTEMPTS) {
     return { failures: 0, lockedUntil: now + LOCKOUT_MS };

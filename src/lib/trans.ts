@@ -2,9 +2,7 @@
 
 export const isMobile =
   typeof navigator !== "undefined" &&
-  /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(
-    navigator.userAgent,
-  );
+  /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
 
 const DESKTOP = "https://fanyi.baidu.com/mtpe-individual/transText?query=";
 const MOBILE = "https://fanyi.baidu.com/m/trans?from=en&to=zh&query=";

@@ -56,13 +56,7 @@ export function useSelection(
   pageKeysRef.current = pageKeys;
 
   const toggle = useCallback((key: string, shiftKey = false) => {
-    const result = toggleKey(
-      keysRef.current,
-      key,
-      pageKeysRef.current,
-      anchor.current,
-      shiftKey,
-    );
+    const result = toggleKey(keysRef.current, key, pageKeysRef.current, anchor.current, shiftKey);
     anchor.current = result.anchor;
     setSelection(result.keys);
   }, []);

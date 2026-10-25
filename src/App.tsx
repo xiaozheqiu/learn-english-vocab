@@ -276,7 +276,11 @@ function AppShell() {
             onOpenGuide={() => navigate("guide")}
             memoryMode={store.memoryMode}
           />
-          <div className="flex items-center gap-1 border-b border-line py-1.5" role="tablist" aria-label="主导航">
+          <div
+            className="flex items-center gap-1 border-b border-line py-1.5"
+            role="tablist"
+            aria-label="主导航"
+          >
             {(
               [
                 ["list", "词表"],
@@ -345,11 +349,7 @@ function AppShell() {
       </main>
 
       {showNav && (
-        <BottomNav
-          current={activeRoute}
-          dueCount={stats.dueToday}
-          onNavigate={navigate}
-        />
+        <BottomNav current={activeRoute} dueCount={stats.dueToday} onNavigate={navigate} />
       )}
 
       <FloatingPanel

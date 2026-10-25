@@ -43,19 +43,17 @@ const TONE = {
  * 结束页（§5 F2）：本次统计 + 三个出口。
  * 统计用 `<dl>` 而不是纯视觉排版，读屏能念出「复习 12 张」这样的成对信息。
  */
-export function ReviewDone({
-  summary,
-  carryOver = 0,
-  onAgain,
-  onGoQuiz,
-  onExit,
-}: ReviewDoneProps) {
+export function ReviewDone({ summary, carryOver = 0, onAgain, onGoQuiz, onExit }: ReviewDoneProps) {
   const { reviewed, byGrade, durationMs } = summary;
   const correct = byGrade[3] + byGrade[4];
   const accuracy = reviewed > 0 ? correct / reviewed : 0;
 
   return (
-    <div data-testid="review-done" data-reviewed={reviewed} className="mx-auto w-full max-w-[560px] px-4 py-6">
+    <div
+      data-testid="review-done"
+      data-reviewed={reviewed}
+      className="mx-auto w-full max-w-[560px] px-4 py-6"
+    >
       <Card className="p-5 sm:p-6">
         <h2 className="text-[20px] font-semibold leading-[1.3] text-ink">这一轮结束</h2>
         <p className="mt-1 text-[13px] text-ink-soft">

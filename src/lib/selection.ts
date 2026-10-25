@@ -46,10 +46,7 @@ export function setKeys(
 }
 
 /** 反选：只翻转作用域内的 key，作用域外的选择保持不动 */
-export function invertKeys(
-  current: ReadonlySet<string>,
-  source: readonly string[],
-): Set<string> {
+export function invertKeys(current: ReadonlySet<string>, source: readonly string[]): Set<string> {
   const next = new Set(current);
   for (const key of source) {
     if (next.has(key)) next.delete(key);
@@ -82,10 +79,7 @@ export function offFilterCountOf(
 }
 
 /** 选中项落在作用域内的部分：批量标记只作用于这些 */
-export function scopedKeysOf(
-  keys: ReadonlySet<string>,
-  source: readonly string[],
-): string[] {
+export function scopedKeysOf(keys: ReadonlySet<string>, source: readonly string[]): string[] {
   const allowed = new Set(source);
   return [...keys].filter((key) => allowed.has(key));
 }

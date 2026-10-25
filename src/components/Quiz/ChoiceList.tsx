@@ -83,7 +83,8 @@ export function ChoiceList({
                   // min-h 52px：远超 44px 触控下限（§7）
                   "flex min-h-[52px] w-full items-center gap-3 rounded-btn border px-3 py-2 text-left text-[15px] transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1",
-                  !wrong && !answer &&
+                  !wrong &&
+                    !answer &&
                     "border-line bg-card text-ink hover:border-brand/40 hover:bg-brand-wash/50",
                   answer && "border-brand bg-brand-wash text-brand-ink",
                   wrong && "border-danger bg-danger-wash text-danger",

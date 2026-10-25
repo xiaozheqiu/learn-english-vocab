@@ -4,7 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DialogTitle, Sheet, SheetContent, SheetDescription } from "@/components/ui/sheet";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
-import { LEVELS, PAGE_SIZES, type LevelFilter, type MasteryFilter, type PageSize } from "@/lib/types";
+import {
+  LEVELS,
+  PAGE_SIZES,
+  type LevelFilter,
+  type MasteryFilter,
+  type PageSize,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export interface FilterBarProps {
@@ -217,7 +223,10 @@ export function FilterBar({
                     variant={pageSize === size ? "subtle" : "outline"}
                     aria-pressed={pageSize === size}
                     onClick={() => onPageSize(size)}
-                    className={cn("w-full px-0 tnum", pageSize === size && "border-brand/40 font-medium")}
+                    className={cn(
+                      "w-full px-0 tnum",
+                      pageSize === size && "border-brand/40 font-medium",
+                    )}
                   >
                     {size}
                   </Button>

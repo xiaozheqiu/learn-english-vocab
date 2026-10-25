@@ -69,8 +69,7 @@ export function buildData({ force = false } = {}) {
 }
 
 const isMain =
-  Boolean(process.argv[1]) &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+  Boolean(process.argv[1]) && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (isMain) {
   const { built, skipped, total, report } = buildData({

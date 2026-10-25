@@ -61,9 +61,7 @@ export function SpellInput({
         </p>
         <p className="text-ink-soft">
           正确答案：
-          <span className="word-serif text-[17px] font-semibold text-ink">
-            {question.answer}
-          </span>
+          <span className="word-serif text-[17px] font-semibold text-ink">{question.answer}</span>
         </p>
       </div>
     );

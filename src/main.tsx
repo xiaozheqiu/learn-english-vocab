@@ -8,7 +8,9 @@ if ("caches" in window) {
   void caches
     .keys()
     .then((names) =>
-      Promise.all(names.filter((name) => name.startsWith("ox5000-")).map((name) => caches.delete(name))),
+      Promise.all(
+        names.filter((name) => name.startsWith("ox5000-")).map((name) => caches.delete(name)),
+      ),
     )
     .catch(() => undefined);
 }

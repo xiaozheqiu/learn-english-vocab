@@ -85,7 +85,8 @@ export function usePwaUpdate(): PwaUpdate {
       window.location.reload();
     };
     navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
-    return () => navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+    return () =>
+      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
   }, []);
 
   const applyUpdate = useCallback(() => {

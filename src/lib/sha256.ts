@@ -43,7 +43,8 @@ function ensureCapacity(bytes: number): Uint8Array {
 function compress(state: Uint32Array, block: Uint8Array, offset: number): void {
   for (let i = 0; i < 16; i += 1) {
     const at = offset + i * 4;
-    W[i] = ((block[at]! << 24) | (block[at + 1]! << 16) | (block[at + 2]! << 8) | block[at + 3]!) >>> 0;
+    W[i] =
+      ((block[at]! << 24) | (block[at + 1]! << 16) | (block[at + 2]! << 8) | block[at + 3]!) >>> 0;
   }
   for (let i = 16; i < 64; i += 1) {
     const x = W[i - 15]!;
@@ -117,8 +118,7 @@ function sha256Segments(segments: readonly Uint8Array[]): Uint8Array {
   buf[total - 1] = low & 0xff;
 
   const state = new Uint32Array([
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
   ]);
   for (let offset = 0; offset < total; offset += 64) compress(state, buf, offset);
 

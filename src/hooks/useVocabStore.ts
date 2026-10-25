@@ -203,26 +203,23 @@ export function useVocabStore(): VocabStore {
 
   /* ── 写入 ────────────────────────────────────────────────── */
 
-  const toggleMastery = useCallback(
-    async (keys: readonly string[], value: boolean) => {
-      if (keys.length === 0) return;
-      setMastered((current) => {
-        const next = new Map(current);
-        const now = Date.now();
-        for (const key of keys) {
-          if (value) next.set(key, now);
-          else next.delete(key);
-        }
-        return next;
-      });
-      try {
-        await saveMastery(keys, value);
-      } catch (error) {
-        setLoadError(String(error));
+  const toggleMastery = useCallback(async (keys: readonly string[], value: boolean) => {
+    if (keys.length === 0) return;
+    setMastered((current) => {
+      const next = new Map(current);
+      const now = Date.now();
+      for (const key of keys) {
+        if (value) next.set(key, now);
+        else next.delete(key);
       }
-    },
-    [],
-  );
+      return next;
+    });
+    try {
+      await saveMastery(keys, value);
+    } catch (error) {
+      setLoadError(String(error));
+    }
+  }, []);
 
   const setPrefs = useCallback(async (patch: Partial<Prefs>) => {
     let next: Prefs = DEFAULT_PREFS;
@@ -296,37 +293,31 @@ export function useVocabStore(): VocabStore {
     [days, prefs.retention, records],
   );
 
-  const restoreCard = useCallback(
-    async (key: string, record: SrsCardRecord | null) => {
-      setRecords((current) => {
-        const copy = new Map(current);
-        if (record) copy.set(key, record);
-        else copy.delete(key);
-        return copy;
-      });
-      try {
-        if (record) await saveCard(record);
-        else await deleteCard(key);
-      } catch (error) {
-        setLoadError(String(error));
-      }
-    },
-    [],
-  );
+  const restoreCard = useCallback(async (key: string, record: SrsCardRecord | null) => {
+    setRecords((current) => {
+      const copy = new Map(current);
+      if (record) copy.set(key, record);
+      else copy.delete(key);
+      return copy;
+    });
+    try {
+      if (record) await saveCard(record);
+      else await deleteCard(key);
+    } catch (error) {
+      setLoadError(String(error));
+    }
+  }, []);
 
   const exportData = useCallback(() => dbExportAll(), []);
 
-  const importData = useCallback(
-    async (payload: unknown) => {
-      await dbImportAll(payload);
-      const snapshot = await loadSnapshot();
-      setRecords(snapshot.srs);
-      setMastered(snapshot.mastery);
-      setDays(snapshot.days);
-      setPrefsState(snapshot.meta.prefs);
-    },
-    [],
-  );
+  const importData = useCallback(async (payload: unknown) => {
+    await dbImportAll(payload);
+    const snapshot = await loadSnapshot();
+    setRecords(snapshot.srs);
+    setMastered(snapshot.mastery);
+    setDays(snapshot.days);
+    setPrefsState(snapshot.meta.prefs);
+  }, []);
 
   const wipeProgress = useCallback(async () => {
     await dbClearProgress();
@@ -367,9 +358,24 @@ export function useVocabStore(): VocabStore {
       refresh,
     }),
     [
-      ready, words, records, mastered, days, prefs, memoryMode, loadError,
-      loadingWords, ensureLevels, toggleMastery, setPrefs, grade, restoreCard,
-      exportData, importData, wipeProgress, refresh,
+      ready,
+      words,
+      records,
+      mastered,
+      days,
+      prefs,
+      memoryMode,
+      loadError,
+      loadingWords,
+      ensureLevels,
+      toggleMastery,
+      setPrefs,
+      grade,
+      restoreCard,
+      exportData,
+      importData,
+      wipeProgress,
+      refresh,
     ],
   );
 }

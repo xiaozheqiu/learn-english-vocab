@@ -79,7 +79,10 @@ export function TopBar({
       </div>
 
       {memoryMode && (
-        <p className="border-t border-due/25 bg-due-wash px-3 py-1.5 text-[12px] text-due" role="status">
+        <p
+          className="border-t border-due/25 bg-due-wash px-3 py-1.5 text-[12px] text-due"
+          role="status"
+        >
           浏览器禁止本地存储，本次进度不会保存
         </p>
       )}

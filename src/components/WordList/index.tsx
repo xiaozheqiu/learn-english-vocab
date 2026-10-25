@@ -19,11 +19,7 @@ export interface WordListPageProps {
 }
 
 /** 词表页（§5 F1 / §9 验收 2、3） */
-export function WordListPage({
-  store,
-  onGoReview,
-  onGoQuiz,
-}: WordListPageProps) {
+export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps) {
   const active = usePageActive();
   const [level, setLevel] = useState<LevelFilter>(store.prefs.defaultLevel);
   const [mode, setMode] = useState<MasteryFilter>("all");
@@ -33,10 +29,7 @@ export function WordListPage({
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setPageSize(store.prefs.pageSize), [store.prefs.pageSize]);
-  useEffect(
-    () => setLevel(store.prefs.defaultLevel),
-    [store.prefs.defaultLevel],
-  );
+  useEffect(() => setLevel(store.prefs.defaultLevel), [store.prefs.defaultLevel]);
 
   // 按等级 / 搜索加载分包
   // 只依赖稳定的 ensureLevels：依赖整个 store 会在每次 words 变化后重跑，形成自激循环
@@ -56,13 +49,10 @@ export function WordListPage({
     if (!keyword && level !== "ALL") source = source.filter((w) => w.level === level);
     if (keyword) {
       source = source.filter(
-        (w) =>
-          w.word.toLowerCase().includes(keyword) ||
-          w.cn.toLowerCase().includes(keyword),
+        (w) => w.word.toLowerCase().includes(keyword) || w.cn.toLowerCase().includes(keyword),
       );
     }
-    if (mode === "todo")
-      return source.filter((w) => !store.mastered.has(w.key));
+    if (mode === "todo") return source.filter((w) => !store.mastered.has(w.key));
     if (mode === "done") return source.filter((w) => store.mastered.has(w.key));
     return source;
   }, [level, mode, query, store.mastered, store.words]);
@@ -93,24 +83,17 @@ export function WordListPage({
   useEffect(() => {
     if (!active) return;
     const onKey = (event: KeyboardEvent) => {
-      if (
-        !event.shiftKey ||
-        (event.key !== "ArrowDown" && event.key !== "ArrowUp")
-      )
-        return;
+      if (!event.shiftKey || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
       const focused = document.activeElement as HTMLElement | null;
       const key = focused?.dataset.key;
       if (!focused || !key) return;
       const index = pageKeys.indexOf(key);
       if (index < 0) return;
-      const nextKey =
-        pageKeys[event.key === "ArrowDown" ? index + 1 : index - 1];
+      const nextKey = pageKeys[event.key === "ArrowDown" ? index + 1 : index - 1];
       if (!nextKey) return;
       event.preventDefault();
       selection.toggle(nextKey, true);
-      listRef.current
-        ?.querySelector<HTMLElement>(`[data-key="${CSS.escape(nextKey)}"]`)
-        ?.focus();
+      listRef.current?.querySelector<HTMLElement>(`[data-key="${CSS.escape(nextKey)}"]`)?.focus();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -124,11 +107,7 @@ export function WordListPage({
   const nowMs = useMemo(() => Date.now(), [store.records, store.mastered]);
   const nowForStatus = useMemo(() => new Date(nowMs), [nowMs]);
   const statusFor = (word: Word) =>
-    statusOf(
-      store.records.get(word.key) ?? null,
-      store.mastered.has(word.key),
-      nowForStatus,
-    );
+    statusOf(store.records.get(word.key) ?? null, store.mastered.has(word.key), nowForStatus);
 
   /**
    * 掌握切换的稳定回调。行组件拿到的是同一个函数 + 自己的 key，
@@ -179,10 +158,7 @@ export function WordListPage({
       )}
 
       {store.loadingWords && store.words.length === 0 ? (
-        <div
-          className="px-4 py-16 text-center text-[13px] text-ink-mute"
-          role="status"
-        >
+        <div className="px-4 py-16 text-center text-[13px] text-ink-mute" role="status">
           正在加载 {level === "ALL" ? "全部等级" : level} 词表…
         </div>
       ) : empty ? (
@@ -205,9 +181,7 @@ export function WordListPage({
             <span className="flex w-[18px] justify-center">
               <Checkbox
                 checked={selection.pageState}
-                onCheckedChange={(value) =>
-                  selection.selectPage(value === true)
-                }
+                onCheckedChange={(value) => selection.selectPage(value === true)}
                 aria-label={
                   selection.pageState === true
                     ? `取消全选本页 ${pageKeys.length} 条`
@@ -244,12 +218,7 @@ export function WordListPage({
             ))}
           </div>
 
-          <Pager
-            page={current}
-            pages={pages}
-            total={filtered.length}
-            onPage={setPage}
-          />
+          <Pager page={current} pages={pages} total={filtered.length} onPage={setPage} />
           {/* 给右下角浮动按钮和底部导航留出安全距离 */}
         </>
       )}
@@ -309,9 +278,7 @@ function EmptyState({
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
       <ListFilter className="h-8 w-8 text-ink-mute" aria-hidden="true" />
       <p className="text-[14px] font-medium text-ink">{reason}</p>
-      <p className="text-[13px] text-ink-soft">
-        换个筛选条件，或回到全库继续找。
-      </p>
+      <p className="text-[13px] text-ink-soft">换个筛选条件，或回到全库继续找。</p>
       <Button variant="outline" size="touch" onClick={onReset}>
         清空筛选
       </Button>

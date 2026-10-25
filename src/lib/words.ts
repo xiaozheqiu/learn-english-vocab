@@ -55,9 +55,7 @@ export async function loadLevel(level: Level): Promise<Word[]> {
 }
 
 /** 搜索需要跨等级，带进度回调 */
-export async function loadAll(
-  onProgress?: (done: number, total: number) => void,
-): Promise<Word[]> {
+export async function loadAll(onProgress?: (done: number, total: number) => void): Promise<Word[]> {
   let done = 0;
   const groups = await Promise.all(
     LEVELS.map(async (level) => {

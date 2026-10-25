@@ -47,24 +47,36 @@
   --radius-card: 14px;
   --radius-btn: 10px;
 
-  --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype",
-    "Source Han Serif SC", "Songti SC", Georgia, serif;
-  --font-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-serif:
+    ui-serif, "Iowan Old Style", "Palatino Linotype", "Source Han Serif SC", "Songti SC", Georgia,
+    serif;
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    sans-serif;
 
-  --shadow-card: 0 1px 2px rgba(16, 32, 27, 0.04),
-    0 12px 32px -24px rgba(16, 32, 27, 0.35);
+  --shadow-card: 0 1px 2px rgba(16, 32, 27, 0.04), 0 12px 32px -24px rgba(16, 32, 27, 0.35);
   --shadow-float: 0 24px 70px -24px rgba(16, 32, 27, 0.35);
 
   --ease-panel: cubic-bezier(0.22, 1, 0.36, 1);
 
   --animate-shake: shake 320ms ease-in-out;
   @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-7px); }
-    40% { transform: translateX(7px); }
-    60% { transform: translateX(-4px); }
-    80% { transform: translateX(4px); }
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    20% {
+      transform: translateX(-7px);
+    }
+    40% {
+      transform: translateX(7px);
+    }
+    60% {
+      transform: translateX(-4px);
+    }
+    80% {
+      transform: translateX(4px);
+    }
   }
 }
 
@@ -101,8 +113,14 @@
     min-width: 320px;
     background: var(--paper);
     color: var(--ink);
-    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
-      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-family:
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      "PingFang SC",
+      "Hiragino Sans GB",
+      "Microsoft YaHei",
+      sans-serif;
     font-size: 14px;
     line-height: 1.65;
     -webkit-font-smoothing: antialiased;
@@ -137,8 +155,9 @@
 
 @layer components {
   .word-serif {
-    font-family: ui-serif, "Iowan Old Style", "Palatino Linotype",
-      "Source Han Serif SC", "Songti SC", Georgia, serif;
+    font-family:
+      ui-serif, "Iowan Old Style", "Palatino Linotype", "Source Han Serif SC", "Songti SC", Georgia,
+      serif;
     font-variant-numeric: tabular-nums;
   }
   .prose-measure {

@@ -17,9 +17,8 @@ import type { SrsCardRecord, StatusInfo } from "./types";
 
 /** FSRS-5 默认权重（19 个）。ts-fsrs 会自动补齐到 21 个（FSRS-6 兼容）。 */
 export const FSRS5_DEFAULT_W = [
-  0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046, 1.54575,
-  0.1192, 1.01925, 1.9395, 0.11, 0.29605, 2.2698, 0.2315, 2.9898, 0.51655,
-  0.6621,
+  0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046, 1.54575, 0.1192, 1.01925,
+  1.9395, 0.11, 0.29605, 2.2698, 0.2315, 2.9898, 0.51655, 0.6621,
 ] as const;
 
 /**
@@ -98,10 +97,7 @@ export function toFsrsCard(record: SrsCardRecord): Card {
   };
 }
 
-export function mergeRecord(
-  record: SrsCardRecord,
-  card: Card,
-): SrsCardRecord {
+export function mergeRecord(record: SrsCardRecord, card: Card): SrsCardRecord {
   return {
     ...record,
     due: card.due.getTime(),

@@ -80,9 +80,7 @@ export function BulkSheet({
         ref={trigger}
         data-testid="bulk-fab"
         type="button"
-        aria-label={
-          nothingSelected ? "批量操作" : `批量操作，已选 ${selectedCount} 条`
-        }
+        aria-label={nothingSelected ? "批量操作" : `批量操作，已选 ${selectedCount} 条`}
         aria-haspopup="dialog"
         onClick={() => {
           if (fab.shouldIgnoreClick()) return;
@@ -90,9 +88,7 @@ export function BulkSheet({
         }}
         {...fab.handlers}
         style={{
-          ...(fab.pos
-            ? { left: fab.pos.x, top: fab.pos.y, right: "auto", bottom: "auto" }
-            : {}),
+          ...(fab.pos ? { left: fab.pos.x, top: fab.pos.y, right: "auto", bottom: "auto" } : {}),
           // 整个按钮都不是滚动起点：否则手指刚按下就被浏览器判成滚页，拖动永远起不来
           touchAction: "none",
         }}
@@ -136,11 +132,7 @@ export function BulkSheet({
               <h3 id="bulk-scope-title" className="text-[13px] font-medium text-ink">
                 作用域
               </h3>
-              <div
-                className="mt-1.5 grid grid-cols-2 gap-1.5"
-                role="group"
-                aria-label="批量作用域"
-              >
+              <div className="mt-1.5 grid grid-cols-2 gap-1.5" role="group" aria-label="批量作用域">
                 {(
                   [
                     ["page", "本页", pageCount],

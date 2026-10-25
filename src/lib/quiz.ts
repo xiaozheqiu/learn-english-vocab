@@ -111,15 +111,11 @@ export function pickDistractors(
   rng: () => number,
   field: "cn" | "word",
 ): string[] {
-  const answerText = normalizeSpelling(
-    field === "cn" ? primaryMeaning(answer.cn) : answer.word,
-  );
+  const answerText = normalizeSpelling(field === "cn" ? primaryMeaning(answer.cn) : answer.word);
   const tiers: Word[][] = [[], [], []];
   for (const candidate of pool) {
     if (candidate.key === answer.key) continue;
-    const text = normalizeSpelling(
-      field === "cn" ? primaryMeaning(candidate.cn) : candidate.word,
-    );
+    const text = normalizeSpelling(field === "cn" ? primaryMeaning(candidate.cn) : candidate.word);
     // 去重：避免两个选项同义 / 同词
     if (!text || text === answerText) continue;
     const sameLevel = candidate.level === answer.level;
@@ -206,13 +202,7 @@ function makeQuestion(
 
   const byChinese = type === "en2cn";
   const answer = byChinese ? displayMeaning(word.cn) : word.word;
-  const distractors = pickDistractors(
-    word,
-    pool,
-    3,
-    rng,
-    byChinese ? "cn" : "word",
-  );
+  const distractors = pickDistractors(word, pool, 3, rng, byChinese ? "cn" : "word");
   const choices = shuffle([answer, ...distractors], rng);
   return {
     key: word.key,
@@ -266,9 +256,7 @@ export function judgeSpelling(question: QuizQuestion, given: string): Judgement 
 }
 
 export function judge(question: QuizQuestion, given: string): Judgement {
-  return question.type === "spell"
-    ? judgeSpelling(question, given)
-    : judgeChoice(question, given);
+  return question.type === "spell" ? judgeSpelling(question, given) : judgeChoice(question, given);
 }
 
 /**

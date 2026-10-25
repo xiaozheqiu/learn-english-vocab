@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  addDays, dayKey, diffDays, formatInterval, formatScheduledDays,
-  nextDays, startOfDay,
+  addDays,
+  dayKey,
+  diffDays,
+  formatInterval,
+  formatScheduledDays,
+  nextDays,
+  startOfDay,
 } from "../date";
 
 const T0 = new Date("2026-03-10T10:30:00+08:00");

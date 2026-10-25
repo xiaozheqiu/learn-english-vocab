@@ -4,13 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import { dayKey } from "@/lib/date";
 import type { Stats } from "@/lib/session";
-import {
-  QUIZ_SIZES,
-  QUIZ_TYPES,
-  REVIEW_SIZES,
-  SPRINT_TARGET,
-  type Prefs,
-} from "@/lib/types";
+import { QUIZ_SIZES, QUIZ_TYPES, REVIEW_SIZES, SPRINT_TARGET, type Prefs } from "@/lib/types";
 import { QUIZ_TYPE_LABELS } from "@/components/Quiz/QuizCard";
 import { cn, percent } from "@/lib/utils";
 
@@ -129,7 +123,10 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
                   </span>
                   <div className="flex h-16 w-full items-end" aria-hidden="true">
                     <div
-                      className={cn("w-full rounded-t-[3px]", isToday ? "bg-brand" : "bg-brand-500")}
+                      className={cn(
+                        "w-full rounded-t-[3px]",
+                        isToday ? "bg-brand" : "bg-brand-500",
+                      )}
                       style={{ height: `${height}%` }}
                     />
                   </div>
@@ -224,7 +221,9 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
                   onPrefsChange({
                     quizTypes: active
                       ? prefs.quizTypes.filter((item) => item !== type)
-                      : QUIZ_TYPES.filter((item) => item === type || prefs.quizTypes.includes(item)),
+                      : QUIZ_TYPES.filter(
+                          (item) => item === type || prefs.quizTypes.includes(item),
+                        ),
                   })
                 }
                 className={cn(
@@ -241,8 +240,8 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
           })}
         </div>
         <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-          只有拼写与中→英（输出型）一次答对才会算「记得」；英→中最多记「模糊」，
-          因为四选一有 25% 是蒙对的。
+          只有拼写与中→英（输出型）一次答对才会算「记得」；英→中最多记「模糊」， 因为四选一有 25%
+          是蒙对的。
         </p>
       </section>
 

@@ -17,9 +17,7 @@ interface PlanMeta {
   limit: number;
 }
 
-type QueueState =
-  | { status: "loading" }
-  | { status: "ready"; items: ReviewItem[]; meta: PlanMeta };
+type QueueState = { status: "loading" } | { status: "ready"; items: ReviewItem[]; meta: PlanMeta };
 
 /**
  * 复习页（§5 F2）
