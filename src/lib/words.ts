@@ -97,7 +97,7 @@ export function acceptedSpellings(word: string): string[] {
 export function normalizeSpelling(value: string): string {
   return value
     .toLowerCase()
-    .replace(/[.,;:!?'"’”“()\[\]]/g, "")
+    .replace(/[.,;:!?'"’”“()[\]]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
