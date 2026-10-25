@@ -1,0 +1,12 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dev-dist/
+coverage/
+
+# 锁文件由 npm 维护，手改会破坏校验
+package-lock.json
+
+# 生成物：data/*.js 来自外部词库，src/data/ 由 scripts/build-data.mjs 生成
+data/
+src/data/
