@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCheck, ListFilter, Sparkles } from "lucide-react";
 import { BulkSheet } from "./BulkSheet";
-import { FilterBar } from "./FilterBar";
+import { FilterBar, type FilterDraft } from "./FilterBar";
 import { Pager } from "./Pager";
+import { ScopeProgress } from "./ScopeProgress";
 import { WordRow as MemoRow } from "./WordRow";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { statusOf } from "@/lib/srs";
+import {
+  filterWords,
+  loadListView,
+  saveListView,
+  scopeProgress,
+  type ListCriteria,
+  type ListView,
+} from "@/lib/listView";
 import { useSelection } from "@/hooks/useSelection";
 import { usePageActive } from "@/hooks/usePageActive";
 import type { VocabStore } from "@/hooks/useVocabStore";
@@ -21,52 +30,81 @@ export interface WordListPageProps {
 /** 词表页（§5 F1 / §9 验收 2、3） */
 export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps) {
   const active = usePageActive();
-  const [level, setLevel] = useState<LevelFilter>(store.prefs.defaultLevel);
-  const [mode, setMode] = useState<MasteryFilter>("all");
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
+  /**
+   * 筛选条件 + 页码整体是一个视图对象，并且持久化。
+   *
+   * 之前 level / mode / query / page 是四个独立的 useState：切 tab 靠常驻面板
+   * 侥幸留着，一旦刷新、或被系统回收后重新打开，全部回到「默认等级 · 第 1 页」——
+   * 从第 1 页翻到第 3 页再刷新，等于从头再筛一遍。现在以 localStorage 为初值，
+   * 每次变化写回（隐私模式下写失败就退回纯内存行为，不影响使用）。
+   */
+  const [view, setView] = useState<ListView>(() => loadListView(store.prefs.defaultLevel));
   const [pageSize, setPageSize] = useState<PageSize>(store.prefs.pageSize);
   const listRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => saveListView(view), [view]);
   useEffect(() => setPageSize(store.prefs.pageSize), [store.prefs.pageSize]);
-  useEffect(() => setLevel(store.prefs.defaultLevel), [store.prefs.defaultLevel]);
+
+  /**
+   * 偏好里的「默认等级」被用户改过才跟着切，并且跳过首次执行：
+   * 首次必须用恢复出来的视图，否则持久化的等级会被默认值当场覆盖。
+   */
+  const seenDefaultLevel = useRef(store.prefs.defaultLevel);
+  useEffect(() => {
+    if (seenDefaultLevel.current === store.prefs.defaultLevel) return;
+    seenDefaultLevel.current = store.prefs.defaultLevel;
+    setView((current) => ({ ...current, level: store.prefs.defaultLevel, page: 1 }));
+  }, [store.prefs.defaultLevel]);
 
   // 按等级 / 搜索加载分包
   // 只依赖稳定的 ensureLevels：依赖整个 store 会在每次 words 变化后重跑，形成自激循环
   const { ensureLevels } = store;
   useEffect(() => {
-    void ensureLevels(query.trim() ? "ALL" : level);
-  }, [ensureLevels, level, query]);
+    void ensureLevels(view.query.trim() ? "ALL" : view.level);
+  }, [ensureLevels, view.level, view.query]);
 
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    let source = store.words;
-    /*
-     * 搜索跨全部等级，不服从等级筛选。
-     * 之前这里是「先按等级过滤再搜索」，结果搜 abandon（B2 词）在默认 A1 下永远是
-     * 「没有匹配」—— 明明已经 loadAll 了全库，用户却以为词表里没这个词。
-     */
-    if (!keyword && level !== "ALL") source = source.filter((w) => w.level === level);
-    if (keyword) {
-      source = source.filter(
-        (w) => w.word.toLowerCase().includes(keyword) || w.cn.toLowerCase().includes(keyword),
-      );
-    }
-    if (mode === "todo") return source.filter((w) => !store.mastered.has(w.key));
-    if (mode === "done") return source.filter((w) => store.mastered.has(w.key));
-    return source;
-  }, [level, mode, query, store.mastered, store.words]);
+  const filtered = useMemo(
+    () => filterWords(store.words, view, store.mastered),
+    [store.mastered, store.words, view],
+  );
+
+  /**
+   * 抽屉里的预览条数：按**草稿**条件算，不吃已生效的条件。
+   * 只读 words / mastered / query，所以搜索框每敲一个字不会连带重算一遍筛选结果。
+   */
+  const countFor = useCallback(
+    (level: LevelFilter, mode: MasteryFilter) => {
+      const criteria: ListCriteria = { level, mode, query: view.query };
+      return filterWords(store.words, criteria, store.mastered).length;
+    },
+    [store.mastered, store.words, view.query],
+  );
+
+  /**
+   * 板块掌握进度：分母是板块总词数，不吃搜索词与掌握筛选。
+   * 搜索时列表本来就跨等级，进度也跟着报全库，否则数字和列表对不上。
+   */
+  const progressScope: LevelFilter = view.query.trim() ? "ALL" : view.level;
+  const progress = useMemo(
+    () => scopeProgress(store.words, progressScope, store.mastered),
+    [progressScope, store.mastered, store.words],
+  );
 
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const current = Math.min(page, pages);
+  const current = Math.min(view.page, pages);
   const rows = useMemo(
     () => filtered.slice((current - 1) * pageSize, current * pageSize),
     [current, filtered, pageSize],
   );
 
+  // 页码越界（筛选变了 / 每页条数变小）时收回来，并同步进持久化状态
   useEffect(() => {
-    if (page > pages) setPage(pages);
-  }, [page, pages]);
+    if (view.page > pages) setView((value) => ({ ...value, page: pages }));
+  }, [pages, view.page]);
+
+  const setPage = useCallback((page: number) => {
+    setView((value) => ({ ...value, page: Math.max(1, page) }));
+  }, []);
 
   const pageKeys = useMemo(() => rows.map((w) => w.key), [rows]);
   const filteredKeys = useMemo(() => filtered.map((w) => w.key), [filtered]);
@@ -118,34 +156,39 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
     [store.toggleMastery],
   );
 
+  const loading = store.loadingWords && store.words.length === 0;
   const empty = !store.loadingWords && filtered.length === 0;
+
+  /**
+   * 「确定」才生效：等级 / 掌握状态 / 每页条数一次性提交，页码回到第 1 页。
+   * 抽屉里的点击只改草稿，所以在按下确定之前列表一行都没动。
+   */
+  const onApplyFilter = useCallback(
+    (next: FilterDraft) => {
+      setView((value) => ({ ...value, level: next.level, mode: next.mode, page: 1 }));
+      if (next.pageSize !== pageSize) {
+        setPageSize(next.pageSize);
+        void store.setPrefs({ pageSize: next.pageSize });
+      }
+    },
+    [pageSize, store],
+  );
+
+  const resetAll = useCallback(() => {
+    setView((value) => ({ ...value, level: "ALL", mode: "all", query: "", page: 1 }));
+  }, []);
 
   return (
     <div className="flex min-h-full flex-col">
       <FilterBar
-        level={level}
-        mode={mode}
+        level={view.level}
+        mode={view.mode}
         defaultLevel={store.prefs.defaultLevel}
-        query={query}
+        query={view.query}
         pageSize={pageSize}
-        total={filtered.length}
-        onLevel={(next) => {
-          setLevel(next);
-          setPage(1);
-        }}
-        onMode={(next) => {
-          setMode(next);
-          setPage(1);
-        }}
-        onQuery={(next) => {
-          setQuery(next);
-          setPage(1);
-        }}
-        onPageSize={(next) => {
-          setPageSize(next);
-          setPage(1);
-          void store.setPrefs({ pageSize: next });
-        }}
+        countFor={countFor}
+        onQuery={(next) => setView((value) => ({ ...value, query: next, page: 1 }))}
+        onApply={onApplyFilter}
       />
 
       {store.loadError && (
@@ -157,73 +200,70 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
         </p>
       )}
 
-      {store.loadingWords && store.words.length === 0 ? (
+      {loading ? (
         <div className="px-4 py-16 text-center text-[13px] text-ink-mute" role="status">
-          正在加载 {level === "ALL" ? "全部等级" : level} 词表…
+          正在加载 {view.level === "ALL" ? "全部等级" : view.level} 词表…
         </div>
-      ) : empty ? (
-        <EmptyState
-          level={level}
-          mode={mode}
-          query={query}
-          onReset={() => {
-            setQuery("");
-            setMode("all");
-            setLevel("ALL");
-          }}
-        />
       ) : (
         <>
-          <div
-            className="sticky top-0 z-10 flex items-center gap-2.5 border-b border-line bg-paper/95 px-3.5 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-mute backdrop-blur"
-            role="row"
-          >
-            <span className="flex w-[18px] justify-center">
-              <Checkbox
-                checked={selection.pageState}
-                onCheckedChange={(value) => selection.selectPage(value === true)}
-                aria-label={
-                  selection.pageState === true
-                    ? `取消全选本页 ${pageKeys.length} 条`
-                    : `全选本页 ${pageKeys.length} 条`
-                }
-              />
-            </span>
-            <span className="w-6 text-right">#</span>
-            <span className="flex-1">
-              单词 <span className="normal-case tracking-normal">/ 释义</span>
-            </span>
-            <span className="hidden lg:inline">排期</span>
-          </div>
+          {/* 板块进度常驻（空态也显示）：筛选结果为空时更需要知道「这个板块本来有多少」 */}
+          <ScopeProgress progress={progress} />
 
-          <div
-            ref={listRef}
-            role="grid"
-            aria-label="词表"
-            data-testid="word-grid"
-            aria-rowcount={filtered.length}
-            className="flex-1 bg-card"
-          >
-            {rows.map((word, index) => (
-              <MemoRow
-                key={word.key}
-                word={word}
-                index={(current - 1) * pageSize + index + 1}
-                status={statusFor(word)}
-                checked={selection.keys.has(word.key)}
-                onToggleSelect={selection.toggle}
-                // 交给行自己带 key 回调，父组件不再为每行新建闭包
-                onToggleMastery={onToggleMastery}
-              />
-            ))}
-          </div>
+          {empty ? (
+            <EmptyState level={view.level} mode={view.mode} query={view.query} onReset={resetAll} />
+          ) : (
+            <>
+              <div
+                className="flex items-center gap-2.5 border-b border-line bg-paper/95 px-3.5 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-mute backdrop-blur"
+                role="row"
+              >
+                <span className="flex w-[18px] justify-center">
+                  <Checkbox
+                    checked={selection.pageState}
+                    onCheckedChange={(value) => selection.selectPage(value === true)}
+                    aria-label={
+                      selection.pageState === true
+                        ? `取消全选本页 ${pageKeys.length} 条`
+                        : `全选本页 ${pageKeys.length} 条`
+                    }
+                  />
+                </span>
+                <span className="w-6 text-right">#</span>
+                <span className="flex-1">
+                  单词 <span className="normal-case tracking-normal">/ 释义</span>
+                </span>
+                <span className="hidden lg:inline">排期</span>
+              </div>
 
-          <Pager page={current} pages={pages} total={filtered.length} onPage={setPage} />
-          {/* 给右下角浮动按钮和底部导航留出安全距离 */}
+              <div
+                ref={listRef}
+                role="grid"
+                aria-label="词表"
+                data-testid="word-grid"
+                aria-rowcount={filtered.length}
+                className="flex-1 bg-card"
+              >
+                {rows.map((word, index) => (
+                  <MemoRow
+                    key={word.key}
+                    word={word}
+                    index={(current - 1) * pageSize + index + 1}
+                    status={statusFor(word)}
+                    checked={selection.keys.has(word.key)}
+                    onToggleSelect={selection.toggle}
+                    // 交给行自己带 key 回调，父组件不再为每行新建闭包
+                    onToggleMastery={onToggleMastery}
+                  />
+                ))}
+              </div>
+
+              <Pager page={current} pages={pages} total={filtered.length} onPage={setPage} />
+            </>
+          )}
         </>
       )}
 
-      {!empty && (
+      {!empty && !loading && (
         <BulkSheet
           selectedCount={selection.keys.size}
           pageCount={pageKeys.length}
@@ -241,6 +281,7 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
         />
       )}
 
+      {/* 空态下给两条出口：此刻最可能想做的是「换个条件」或「去学新词」 */}
       {empty && (
         <div className="flex justify-center gap-2 pb-6">
           <Button variant="outline" size="touch" onClick={onGoQuiz}>

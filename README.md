@@ -63,16 +63,18 @@ CI 每次跑都要重新装依赖、下 Chromium，几十秒换来的信息在�
 
 为此 UI 上补了一批**语义钩子**（不是给样式用的）：
 
-| 钩子                                                                      | 位置       | 用途                                 |
-| ------------------------------------------------------------------------- | ---------- | ------------------------------------ |
-| `data-testid="review-running"` + `data-done` / `data-total`               | 复习会话   | 进度、补考后队列长度                 |
-| `data-testid="review-done"` + `data-reviewed`                             | 复习结束页 | 本轮实际复习数                       |
-| `data-testid="quiz-question"` + `data-index` / `data-total`               | 测试答题   | 题号与总题数                         |
-| `data-testid="quiz-empty"` + `data-reason`                                | 测试空态   | 区分「没学过」「池子太小」「无题型」 |
-| `data-grade="1..4"`                                                       | 评分按钮   | 避免依赖可访问名称                   |
-| `data-testid="filter-trigger" / filter-mode / filter-done / filter-reset` | 筛选       | 抽屉交互                             |
-| `data-testid="bulk-fab" / bulk-mark / bulk-unmark`                        | 批量       | 浮动按钮与动作                       |
-| `data-row-index`                                                          | 词表行     | 分页跳转后的序号校验                 |
+| 钩子                                                                           | 位置       | 用途                                 |
+| ------------------------------------------------------------------------------ | ---------- | ------------------------------------ |
+| `data-testid="review-running"` + `data-done` / `data-total`                    | 复习会话   | 进度、补考后队列长度                 |
+| `data-testid="review-done"` + `data-reviewed`                                  | 复习结束页 | 本轮实际复习数                       |
+| `data-testid="quiz-question"` + `data-index` / `data-total`                    | 测试答题   | 题号与总题数                         |
+| `data-testid="quiz-empty"` + `data-reason`                                     | 测试空态   | 区分「没学过」「池子太小」「无题型」 |
+| `data-grade="1..4"`                                                            | 评分按钮   | 避免依赖可访问名称                   |
+| `data-testid="filter-trigger" / filter-mode / filter-done / filter-reset`      | 筛选       | 抽屉交互                             |
+| `data-testid="filter-preview"` + `data-pending` / `data-count`                 | 筛选抽屉   | 草稿是否已提交、按草稿会剩多少条     |
+| `data-testid="scope-progress"` + `data-scope` / `data-mastered` / `data-total` | 板块进度   | 当前板块的掌握数与总数               |
+| `data-testid="bulk-fab" / bulk-mark / bulk-unmark`                             | 批量       | 浮动按钮与动作                       |
+| `data-row-index`                                                               | 词表行     | 分页跳转后的序号校验                 |
 
 断言全部落在**行为**上：队列长度变化、`aria-pressed` 翻转、抽屉是否关闭、
 题面单词是否在已学集合里、hash 是否被纠正。
@@ -106,14 +108,14 @@ CI 每次跑都要重新装依赖、下 Chromium，几十秒换来的信息在�
 - `computeStats` 把原来的 9 趟遍历（学过的 + 免检计数 + 7 天预测）合成 1 趟。
 - `WordRow` 的 `memo` 必须自定义比较函数：`status` 是每帧新对象，浅比较永远失效。
 
-| 页面     | 路由       | 说明                                                                 |
-| -------- | ---------- | -------------------------------------------------------------------- |
-| 锁屏     | `#/lock`   | 固定 6 位 PIN，自建 3×4 键盘，连错 5 次锁 30 秒                      |
-| 首次设置 | `#/setup`  | 设 PIN（可跳过）+ 默认等级 + 每日新词上限                            |
-| 词表     | `#/`       | 主页面，右下角可拖动批量入口（全选/反选/标记）、表头三态框、状态左栏 |
-| 复习     | `#/review` | FSRS 队列，四档按钮直接印下次间隔，单词可点跳翻译                    |
-| 测试     | `#/quiz`   | 英→中 / 中→英 / 拼写，种子可复现                                     |
-| 词性对照 | `#/guide`  | 现有 Markdown 页                                                     |
+| 页面     | 路由       | 说明                                                                             |
+| -------- | ---------- | -------------------------------------------------------------------------------- |
+| 锁屏     | `#/lock`   | 固定 6 位 PIN，自建 3×4 键盘，连错 5 次锁 30 秒                                  |
+| 首次设置 | `#/setup`  | 设 PIN（可跳过）+ 默认等级 + 每日新词上限                                        |
+| 词表     | `#/`       | 主页面，筛选抽屉（确定生效）、板块掌握进度、表头三态框、可拖动批量入口、状态左栏 |
+| 复习     | `#/review` | FSRS 队列，四档按钮直接印下次间隔，单词可点跳翻译                                |
+| 测试     | `#/quiz`   | 英→中 / 中→英 / 拼写，种子可复现                                                 |
+| 词性对照 | `#/guide`  | 现有 Markdown 页                                                                 |
 
 hash 路由，GitHub Pages 深链刷新无需 404 兜底。
 
@@ -243,6 +245,17 @@ App 也不显示「还剩多少天」这类倒计时——那等于替用户预�
 
 只有明确点「去测试」「换一套」这类入口才推进 `requestId` 重新抽题。
 
+### 词表视图的持久化
+
+筛选条件（等级 / 掌握状态 / 搜索词）与页码不靠「面板常驻」侥幸活着：它们是一个
+`ListView` 对象，写进 `localStorage["ox5000-list-view-v1"]`。刷新、被系统回收后重进、
+换标签页再回来都还原到原来的板块与页。读回时逐字段校验（非法等级、0/负数/NaN 页码、
+超长搜索词各自单独回落），坏值不会让整条视图作废。隐私模式下写失败就退回纯内存行为。
+
+抽屉里的条件在按「确定」之前只是草稿，列表不动；关闭抽屉即丢弃。
+板块进度（`A1 已掌握 12 / 900`）分母固定是板块总词数，不吃搜索词与掌握筛选；
+搜索时列表跨等级，进度也跟着报全库。
+
 ## 目录
 
 ```
@@ -261,6 +274,7 @@ src/
     lock.ts                   PIN 哈希（PBKDF2）与解锁状态
     route.ts                  hash 路由
     selection.ts              选中集合纯函数（三态 / 扩选 / 反选 / 作用域）
+    listView.ts               词表视图：过滤 / 板块进度 / 视图持久化
   hooks/
     useVocabStore.ts          数据状态 + 写入编排
     useLock.ts                锁屏状态与自动锁定
@@ -272,7 +286,7 @@ src/
     layout/                   BottomNav / TopBar / TabPane（常驻面板 + 滚动保存）
     LockScreen.tsx            PIN 锁屏
     SetupWizard.tsx           首次设置
-    WordList/                 WordRow / StatusRail / BulkSheet / FilterBar / Pager
+    WordList/                 WordRow / StatusRail / BulkSheet / FilterBar / Pager / ScopeProgress
     Review/                   ReviewCard / RatingBar / ReviewSession / ReviewDone
     Quiz/                     QuizCard / ChoiceList / SpellInput / QuizResult
     Panel/                    FloatingPanel（抽屉/悬浮卡）+ 4 个分区

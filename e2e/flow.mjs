@@ -100,6 +100,88 @@ try {
   await waitRows(page, 20);
   report.check("filter.resets", (await rowCount(page)) === 20);
 
+  /* ── 3b. 抽屉里改条件不即时生效，点「确定」才生效 ─────────── */
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-level"]').getByRole("button").nth(1).click(); // A2
+  await page.waitForTimeout(300);
+  const draftLevel = await page
+    .locator('[data-testid="filter-trigger"]')
+    .getAttribute("aria-expanded");
+  report.check(
+    "filter.draftDoesNotApply",
+    (await rowCount(page)) === 20 &&
+      (await page.locator('[role="row"][data-key]').first().getAttribute("data-key")).startsWith(
+        "A1|",
+      ) &&
+      (await page.locator('[data-testid="filter-preview"]').getAttribute("data-pending")) === "1",
+    `expanded=${draftLevel}`,
+  );
+  // 关掉（Esc）= 丢弃草稿（上一步的「清空筛选」已把等级置为全部，这里只验 A2 没被提交）
+  await page.keyboard.press("Escape");
+  await waitDialogClosed(page);
+  report.check(
+    "filter.discardsDraftOnClose",
+    !(await page.locator('[data-testid="filter-trigger"]').innerText()).includes("A2") &&
+      (await page.locator('[role="row"][data-key]').first().getAttribute("data-key"))?.startsWith(
+        "A1|",
+      ),
+  );
+
+  // 再选一次并确定，这次必须生效
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-level"]').getByRole("button").nth(1).click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await until(
+    page,
+    async () =>
+      (await page.locator('[role="row"][data-key]').first().getAttribute("data-key"))?.startsWith(
+        "A2|",
+      ),
+    { label: "filter applied after confirm" },
+  );
+  report.check(
+    "filter.appliesOnConfirm",
+    (await page.locator('[data-testid="filter-trigger"]').innerText()).includes("A2"),
+  );
+
+  /* ── 3c. 板块进度：跟着板块走，标记已掌握后 +1 ─────────────── */
+  const scopeEl = page.locator('[data-testid="scope-progress"]');
+  const scopeOf = async () => ({
+    scope: await scopeEl.getAttribute("data-scope"),
+    mastered: Number(await scopeEl.getAttribute("data-mastered")),
+    total: Number(await scopeEl.getAttribute("data-total")),
+  });
+  const a2Before = await scopeOf();
+  report.check(
+    "scope.followsLevel",
+    a2Before.scope === "A2" && a2Before.total > 0 && a2Before.mastered === 0,
+    JSON.stringify(a2Before),
+  );
+  // 标记第一行为已掌握 → 进度 +1（不依赖文案，直接读 data-*）
+  const markBtn = page
+    .locator('[role="row"][data-key]')
+    .first()
+    .locator("button")
+    .filter({ hasNot: page.locator('[role="checkbox"]') })
+    .last();
+  await markBtn.click();
+  await until(page, async () => (await scopeOf()).mastered === a2Before.mastered + 1, {
+    label: "scope mastery +1",
+  });
+  report.check("scope.countsMastery", true);
+  // 恢复：取消标记 + 回到全库
+  await markBtn.click();
+  await until(page, async () => (await scopeOf()).mastered === a2Before.mastered, {
+    label: "scope mastery restored",
+  });
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+  report.check("scope.resetToAllLevels", (await scopeOf()).scope === "ALL");
+
   /* ── 4. 批量（浮动按钮 + 抽屉）──────────────────────────── */
   const fab = nav.bulk(page);
   report.check("bulk.fabIsIconOnly", (await fab.innerText()).trim() === "");

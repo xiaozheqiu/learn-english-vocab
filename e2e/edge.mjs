@@ -15,6 +15,7 @@ import {
   launch,
   nav,
   newPage,
+  openFilter,
   rowCount,
   until,
   waitDialogClosed,
@@ -97,6 +98,45 @@ try {
     "pager.hasNoPageSizeControl",
     (await page.locator('nav[aria-label="分页"] select').count()) === 0,
   );
+
+  /* ── 筛选条件与页码跨刷新保留 ─────────────────────────────── */
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-level"]').getByRole("button").nth(1).click(); // A2
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await until(
+    page,
+    async () =>
+      (await page.locator('[role="row"][data-key]').first().getAttribute("data-key"))?.startsWith(
+        "A2|",
+      ),
+    { label: "A2 applied" },
+  );
+  await pageJump.fill("3");
+  await page.waitForTimeout(400);
+  const beforeReload = await page
+    .locator('[role="row"][data-key]')
+    .first()
+    .getAttribute("data-key");
+  await page.reload({ waitUntil: "networkidle" });
+  await waitRows(page, 20);
+  const afterReload = await page.locator('[role="row"][data-key]').first().getAttribute("data-key");
+  report.check(
+    "view.persistsAcrossReload",
+    beforeReload === afterReload && (await pageJump.inputValue()) === "3",
+    `${beforeReload} → ${afterReload}`,
+  );
+  report.check(
+    "view.persistsFilterLabel",
+    (await page.locator('[data-testid="filter-trigger"]').innerText()).includes("A2"),
+  );
+  // 复原，避免影响后续用例（后续用例假定默认 A1 · 第 1 页）
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await pageJump.fill("1");
+  await waitRows(page, 20);
 
   /* ── 数据面板：导出 / 导入 / 清空三个入口 ────────────────── */
   await nav.panel(page).click();
