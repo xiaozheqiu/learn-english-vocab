@@ -14,6 +14,12 @@ function w(key: string): Word {
     cn: "释义",
     scope: "3000",
     seq: "",
+    rank: 0,
+    tier: "core",
+    cefr: "",
+    senseCefr: [],
+    ox3000: false,
+    ox5000: false,
   };
 }
 function card(
@@ -53,7 +59,7 @@ describe("复习队列", () => {
       words,
       records,
       mastered: new Map([["k3", NOW.getTime()]]),
-      prefs: { reviewSize: 50, retention: 0.9 },
+      prefs: { reviewSize: 50, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     expect(plan.items.map((i) => i.word.key)).toEqual(["k1"]);
@@ -70,7 +76,7 @@ describe("复习队列", () => {
       words,
       records,
       mastered: new Map(),
-      prefs: { reviewSize: 50, retention: 0.9 },
+      prefs: { reviewSize: 50, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     // b 的 R 最低（stability 小、逾期久），排最前
@@ -86,7 +92,7 @@ describe("复习队列", () => {
       words,
       records: new Map(),
       mastered: new Map(),
-      prefs: { reviewSize: 50, retention: 0.9 },
+      prefs: { reviewSize: 50, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     expect(plan.items).toHaveLength(3);
@@ -98,7 +104,7 @@ describe("复习队列", () => {
       words,
       records: new Map(),
       mastered: new Map(),
-      prefs: { reviewSize: 2, retention: 0.9 },
+      prefs: { reviewSize: 2, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     expect(limited.items).toHaveLength(2);
@@ -111,7 +117,7 @@ describe("复习队列", () => {
       words: many,
       records: new Map(),
       mastered: new Map(),
-      prefs: { reviewSize: 300, retention: 0.9 },
+      prefs: { reviewSize: 300, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     // 一轮只给 20 个新词，其余顺延到下一轮
@@ -123,7 +129,7 @@ describe("复习队列", () => {
       // 模拟已学掉前 20 个
       records: new Map(many.slice(0, 20).map((word) => [word.key, card(word.key, 3)])),
       mastered: new Map(),
-      prefs: { reviewSize: 300, retention: 0.9 },
+      prefs: { reviewSize: 300, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     expect(next.newTotal).toBe(Math.min(20, many.length - 20));
@@ -139,7 +145,7 @@ describe("复习队列", () => {
       words,
       records,
       mastered: new Map(),
-      prefs: { reviewSize: 3, retention: 0.9 },
+      prefs: { reviewSize: 3, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     expect(plan.items).toHaveLength(3);
@@ -158,7 +164,7 @@ describe("积压可见", () => {
       words,
       records,
       mastered: new Map(),
-      prefs: { reviewSize: 8, retention: 0.9 },
+      prefs: { reviewSize: 8, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     expect(plan.items).toHaveLength(8);
@@ -176,7 +182,7 @@ describe("积压可见", () => {
       words,
       records,
       mastered: new Map(),
-      prefs: { reviewSize: 300, retention: 0.9 },
+      prefs: { reviewSize: 300, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     expect(plan.carryOver).toBe(0);
@@ -191,7 +197,7 @@ describe("「已掌握」是降频而不是毕业", () => {
       records: new Map([["k1", card("k1", -1)]]),
       // 标记时间 = 现在，免检期内
       mastered: new Map([["k1", NOW.getTime()]]),
-      prefs: { reviewSize: 50, retention: 0.9 },
+      prefs: { reviewSize: 50, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     expect(plan.items).toHaveLength(0);
@@ -205,7 +211,7 @@ describe("「已掌握」是降频而不是毕业", () => {
       // 连评分记录都没有的「已掌握」词也要被抽查到
       records: new Map(),
       mastered: new Map([["k1", markedLongAgo]]),
-      prefs: { reviewSize: 50, retention: 0.9 },
+      prefs: { reviewSize: 50, retention: 0.9, includeExtended: false, cefrCap: "" },
       now: NOW,
     });
     expect(plan.items.map((i) => i.word.key)).toEqual(["k1"]);
@@ -220,7 +226,7 @@ describe("「已掌握」是降频而不是毕业", () => {
       records: new Map(),
       mastered: new Map([["k1", NOW.getTime() - 200 * 86_400_000]]),
       days: new Map(),
-      prefs: { retention: 0.9 },
+      prefs: { retention: 0.9, includeExtended: false },
       now: NOW,
     });
     expect(stats.dueToday).toBe(1);
@@ -272,7 +278,7 @@ describe("统计", () => {
       records,
       mastered: new Map([["k3", NOW.getTime()]]),
       days,
-      prefs: { retention: 0.9 },
+      prefs: { retention: 0.9, includeExtended: false },
       now: NOW,
     });
     expect(stats.todayReviewed).toBe(10);
@@ -292,7 +298,7 @@ describe("统计", () => {
       records: new Map(),
       mastered: new Map(),
       days: new Map(),
-      prefs: { retention: 0.9 },
+      prefs: { retention: 0.9, includeExtended: false },
       now: NOW,
     });
     expect(stats.averageRetrievability).toBe(0);

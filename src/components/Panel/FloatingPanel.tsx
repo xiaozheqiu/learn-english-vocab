@@ -53,6 +53,7 @@ export function FloatingPanel({
   onInstall,
   onOpenGuide,
   onGoQuiz,
+  onOpenLeech,
   today,
 }: FloatingPanelProps) {
   const isDesktop = useIsDesktop();
@@ -187,6 +188,7 @@ export function FloatingPanel({
                   prefs={store.prefs}
                   today={today}
                   onPrefsChange={(patch) => void store.setPrefs(patch)}
+                  onOpenLeech={onOpenLeech}
                 />
                 <Button variant="ghost" size="touch" className="w-full" onClick={goQuiz}>
                   去测试练错词

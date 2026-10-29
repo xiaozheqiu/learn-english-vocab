@@ -13,7 +13,7 @@ import {
   type RecordLogItem,
 } from "ts-fsrs";
 import { DAY_MS, elapsedDays, formatScheduledDays } from "./date";
-import type { SrsCardRecord, StatusInfo } from "./types";
+import { LEECH_COOLDOWN_DAYS, LEECH_THRESHOLD, type SrsCardRecord, type StatusInfo } from "./types";
 
 /** FSRS-5 默认权重（19 个）。ts-fsrs 会自动补齐到 21 个（FSRS-6 兼容）。 */
 export const FSRS5_DEFAULT_W = [
@@ -232,6 +232,32 @@ export function isDue(record: SrsCardRecord, now: Date = new Date()): boolean {
   return record.reps > 0 && record.due <= now.getTime();
 }
 
+/**
+ * 顽固词判定 + 冷却期。
+ *
+ * 判据是「累计忘记 ≥ LEECH_THRESHOLD 且仍在冷却期内」。
+ * 注意用累计 lapses 而不是当前 stability：stability 会被一次答对拉高，
+ * 而 lapses 只增不减，才真正反映「这个词反复记不住」。
+ */
+export function isLeech(record: SrsCardRecord | null): boolean {
+  return Boolean(record && record.lapses >= LEECH_THRESHOLD);
+}
+
+/** 顽固词下次回归主队列的时间点（首次进入 leech 时算起） */
+export function leechDueAt(record: SrsCardRecord): number {
+  const since = record.last_review ?? record.due;
+  return since + LEECH_COOLDOWN_DAYS * DAY_MS;
+}
+
+/**
+ * 当前是否应该被 leech 规则挡在主队列外。
+ * 超过冷却期返回 false —— 它会回到队列里考一次。
+ */
+export function isShelvedAsLeech(record: SrsCardRecord | null, now: Date = new Date()): boolean {
+  if (!record || !isLeech(record)) return false;
+  return now.getTime() < leechDueAt(record);
+}
+
 /** 状态左栏分类（§1.5） */
 export function statusOf(
   record: SrsCardRecord | null,
@@ -243,6 +269,19 @@ export function statusOf(
   }
   if (!record || record.reps <= 0) {
     return { kind: "new", label: "", rail: "" };
+  }
+  /*
+   * 顽固词优先于其他状态。
+   * 放在「今天到期」之前：一个 lapses≥8 的词如果显示「今天到期」，
+   * 用户会以为它跟普通到期卡一样，而实际上它已经被移出队列了。
+   */
+  if (isLeech(record)) {
+    const shelved = now.getTime() < leechDueAt(record);
+    return {
+      kind: "leech",
+      label: shelved ? `顽固词·忘 ${record.lapses} 次` : "顽固词·待复考",
+      rail: "rail-due",
+    };
   }
   const label = formatIntervalFromRecord(record, now);
   if (record.due <= now.getTime()) {

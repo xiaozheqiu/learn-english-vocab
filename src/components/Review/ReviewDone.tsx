@@ -2,7 +2,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { RATING_LABELS, type Grade } from "@/lib/srs";
-import { percent } from "@/lib/utils";
+import { cn, percent } from "@/lib/utils";
+
+/** 一个本轮没记牢的词，供结果页列出并直接开练 */
+export interface WeakWord {
+  key: string;
+  word: string;
+  /** 本轮最后一次的评分 */
+  grade: Grade;
+}
 
 /** 一次复习会话的统计（复习卡只出「忘记/模糊/记得/很熟」四档） */
 export interface ReviewSummary {
@@ -12,6 +20,13 @@ export interface ReviewSummary {
   byGrade: Record<Grade, number>;
   /** 本次用时（毫秒）；0 = 不计时 */
   durationMs: number;
+  /**
+   * 本轮「忘记」或「模糊」的词。
+   *
+   * 只统计最终状态：同一个词本轮可能被答错后又补考答对，
+   * 那种情况不算弱词 —— 它已经在同一轮里被修复了。
+   */
+  weak: readonly WeakWord[];
 }
 
 export interface ReviewDoneProps {
@@ -19,6 +34,11 @@ export interface ReviewDoneProps {
   /** 本轮装不下、留到明天的到期卡数 */
   carryOver?: number;
   onAgain: () => void;
+  /**
+   * 拿本轮弱词直接开练。
+   * 只传 key：练习页需要 key 白名单，不需要词对象。
+   */
+  onPracticeWeak: (keys: string[]) => void;
   onGoQuiz: () => void;
   onExit: () => void;
 }
@@ -43,8 +63,15 @@ const TONE = {
  * 结束页（§5 F2）：本次统计 + 三个出口。
  * 统计用 `<dl>` 而不是纯视觉排版，读屏能念出「复习 12 张」这样的成对信息。
  */
-export function ReviewDone({ summary, carryOver = 0, onAgain, onGoQuiz, onExit }: ReviewDoneProps) {
-  const { reviewed, byGrade, durationMs } = summary;
+export function ReviewDone({
+  summary,
+  carryOver = 0,
+  onAgain,
+  onPracticeWeak,
+  onGoQuiz,
+  onExit,
+}: ReviewDoneProps) {
+  const { reviewed, byGrade, durationMs, weak } = summary;
   const correct = byGrade[3] + byGrade[4];
   const accuracy = reviewed > 0 ? correct / reviewed : 0;
 
@@ -99,6 +126,47 @@ export function ReviewDone({ summary, carryOver = 0, onAgain, onGoQuiz, onExit }
               ) : null,
             )}
           </div>
+        )}
+
+        {/*
+          本轮没记牢的词。
+          之前结果页只有一个正确率数字，用户看完不知道该干什么 ——
+          真正有用的是「哪些词没记住」，以及一条直达的练习入口。
+        */}
+        {weak.length > 0 && (
+          <section aria-labelledby="weak-title" className="mt-4">
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 id="weak-title" className="text-[13px] font-medium text-ink">
+                这几个没记牢
+              </h3>
+              <span className="text-[12px] text-ink-mute tnum">{weak.length} 个</span>
+            </div>
+            <ul className="mt-1.5 flex flex-wrap gap-1.5">
+              {weak.map((item) => (
+                <li key={item.key}>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[12px]",
+                      item.grade === 1
+                        ? "border-danger/25 bg-danger-wash text-danger"
+                        : "border-due/30 bg-due-wash text-due",
+                    )}
+                  >
+                    <span className="word-serif font-medium">{item.word}</span>
+                    <span className="text-[10px] opacity-80">{RATING_LABELS[item.grade - 1]}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <Button
+              size="touch"
+              variant="outline"
+              className="mt-2 w-full"
+              onClick={() => onPracticeWeak(weak.map((item) => item.key))}
+            >
+              只练这 {weak.length} 个
+            </Button>
+          </section>
         )}
 
         {carryOver > 0 && (

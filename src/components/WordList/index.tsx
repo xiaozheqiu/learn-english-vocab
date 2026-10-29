@@ -15,6 +15,9 @@ import {
   scopeProgress,
   type ListCriteria,
   type ListView,
+  type CefrFilter,
+  type OxfordFilter,
+  type TierFilter,
 } from "@/lib/listView";
 import { useSelection } from "@/hooks/useSelection";
 import { usePageActive } from "@/hooks/usePageActive";
@@ -73,8 +76,14 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
    * 只读 words / mastered / query，所以搜索框每敲一个字不会连带重算一遍筛选结果。
    */
   const countFor = useCallback(
-    (level: LevelFilter, mode: MasteryFilter) => {
-      const criteria: ListCriteria = { level, mode, query: view.query };
+    (
+      level: LevelFilter,
+      mode: MasteryFilter,
+      tier: TierFilter,
+      cefr: CefrFilter,
+      oxford: OxfordFilter,
+    ) => {
+      const criteria: ListCriteria = { level, mode, tier, cefr, oxford, query: view.query };
       return filterWords(store.words, criteria, store.mastered).length;
     },
     [store.mastered, store.words, view.query],
@@ -97,10 +106,18 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
     [current, filtered, pageSize],
   );
 
-  // 页码越界（筛选变了 / 每页条数变小）时收回来，并同步进持久化状态
+  /*
+   * 页码越界（筛选变了 / 每页条数变小）时收回来。
+   *
+   * 必须等词表加载完再收敛：首帧 filtered 还是空数组，pages 算出来是 1，
+   * 这里会把持久化恢复出来的 page:3 当场改成 1 —— 表现为「刷新后回到第 1 页」。
+   * 加载完成前 pages 没有意义，跳过即可。
+   */
+  const listLoaded = !store.loadingWords || store.words.length > 0;
   useEffect(() => {
+    if (!listLoaded) return;
     if (view.page > pages) setView((value) => ({ ...value, page: pages }));
-  }, [pages, view.page]);
+  }, [listLoaded, pages, view.page]);
 
   const setPage = useCallback((page: number) => {
     setView((value) => ({ ...value, page: Math.max(1, page) }));
@@ -165,7 +182,15 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
    */
   const onApplyFilter = useCallback(
     (next: FilterDraft) => {
-      setView((value) => ({ ...value, level: next.level, mode: next.mode, page: 1 }));
+      setView((value) => ({
+        ...value,
+        level: next.level,
+        mode: next.mode,
+        tier: next.tier,
+        cefr: next.cefr,
+        oxford: next.oxford,
+        page: 1,
+      }));
       if (next.pageSize !== pageSize) {
         setPageSize(next.pageSize);
         void store.setPrefs({ pageSize: next.pageSize });
@@ -175,7 +200,16 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
   );
 
   const resetAll = useCallback(() => {
-    setView((value) => ({ ...value, level: "ALL", mode: "all", query: "", page: 1 }));
+    setView((value) => ({
+      ...value,
+      level: "ALL",
+      mode: "all",
+      tier: "all",
+      cefr: "all",
+      oxford: "all",
+      query: "",
+      page: 1,
+    }));
   }, []);
 
   return (
@@ -183,6 +217,9 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
       <FilterBar
         level={view.level}
         mode={view.mode}
+        tier={view.tier}
+        cefr={view.cefr}
+        oxford={view.oxford}
         defaultLevel={store.prefs.defaultLevel}
         query={view.query}
         pageSize={pageSize}

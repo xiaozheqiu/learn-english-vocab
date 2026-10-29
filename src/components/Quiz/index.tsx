@@ -76,7 +76,7 @@ export function QuizPage({
   inputs.current = store;
 
   const draw = useCallback((only: readonly string[] | null | undefined): Run => {
-    const { words, records, prefs } = inputs.current;
+    const { words, records, mastered, prefs } = inputs.current;
     const types = normalizeTypes(prefs.quizTypes);
     const seed = Date.now().toString();
     /*
@@ -84,7 +84,14 @@ export function QuizPage({
      * 之前直接用全库，结果一个词都没学过也能抽 50 道题考你 ——
      * 测试的意义是对已学内容做检索练习，不该拿没见过的词当题目。
      */
-    const studied = words.filter((w) => records.has(w.key));
+    /*
+     * 出题池 = 有 FSRS 记录 或 标记过已掌握。
+     *
+     * 之前只判 records.has()，与空态文案「有复习记录或标记过已掌握」不一致：
+     * 用户用快筛把一批词标成「已掌握」后，测试页仍显示「还没有学过的词」——
+     * 明明是他刚确认过的词，却抽不到。
+     */
+    const studied = words.filter((w) => records.has(w.key) || mastered.has(w.key));
     const size = Math.max(1, Math.min(prefs.quizSize, studied.length));
     const limited = only && only.length > 0 ? [...only] : null;
     return {
@@ -123,13 +130,39 @@ export function QuizPage({
     [draw],
   );
 
-  // 外层请求了一次新题（含第一次进页面）：序号变了才重抽，普通重渲染不碰这套题
+  /*
+   * 外层请求了一次新题（含第一次进页面）：序号变了才重抽，普通重渲染不碰这套题。
+   *
+   * onlyKeys 必须走 ref 读最新值。
+   * App 在同一批更新里同时清空 onlyKeys 并推进 requestId，
+   * 而 effect 的闭包捕获的是**上一次渲染**的 onlyKeys ——
+   * 直接读变量会拿到已被清空前的那份白名单，重抽出来的还是那几道题。
+   */
+  const onlyKeysRef = useRef(onlyKeys);
+  onlyKeysRef.current = onlyKeys;
+
   const appliedTicket = useRef(requestId);
   useEffect(() => {
     if (requestId === appliedTicket.current) return;
     appliedTicket.current = requestId;
-    restart(onlyKeys ?? []);
-  }, [onlyKeys, requestId, restart]);
+    restart(onlyKeysRef.current ?? []);
+  }, [requestId, restart]);
+
+  /*
+   * 白名单被清空、但还没有新序号时，也要重抽一次全量。
+   *
+   * 场景：用户点过「只练这 2 个」→ 之后 direct 进入练习页（未走 openQuiz）
+   * 时 onlyKeys 已变 null，而 requestId 没变，run 里仍挂着旧白名单套题。
+   * 这里补一条兜底：run 的白名单与当前 props 不一致就重建。
+   */
+  useEffect(() => {
+    const runOnly = run.only;
+    const propsOnly = onlyKeysRef.current;
+    const runHas = Array.isArray(runOnly) && runOnly.length > 0;
+    const propsHas = Array.isArray(propsOnly) && propsOnly.length > 0;
+    if (runHas === propsHas) return;
+    restart(propsOnly ?? []);
+  }, [onlyKeys, run.only, restart]);
 
   /**
    * 「只练错题」优先交给外层（App 会把白名单塞回来并推进请求序号），
@@ -164,8 +197,20 @@ export function QuizPage({
 
   const types = normalizeTypes(store.prefs.quizTypes);
   // 可出题的池子 = 学过的词，不是全库
-  const studiedCount = store.words.reduce((n, w) => (store.records.has(w.key) ? n + 1 : n), 0);
-  const poolReady = store.ready && studiedCount >= MIN_POOL;
+  const studiedCount = store.words.reduce(
+    (n, w) => (store.records.has(w.key) || store.mastered.has(w.key) ? n + 1 : n),
+    0,
+  );
+  /*
+   * 白名单模式下不检查池子规模。
+   *
+   * MIN_POOL 约束的是「四选一凑不出干扰项」：全量抽题时如果只有 3 个学过的词，
+   * 没有任何可选项可言。但指定了 onlyKeys 时，题干限定在那几个词，
+   * 干扰项仍从全量词池取（见 draw 里的 pool: words）——
+   * 所以「只练这 2 个」完全出得了题，用 8 的门槛拦下来是错的。
+   */
+  const hasWhitelist = Boolean(onlyKeys && onlyKeys.length > 0);
+  const poolReady = store.ready && (hasWhitelist || studiedCount >= MIN_POOL);
   const canBuild = poolReady && types.length > 0;
 
   /**
@@ -215,7 +260,7 @@ export function QuizPage({
     );
   }
 
-  if (studiedCount === 0) {
+  if (studiedCount === 0 && !hasWhitelist) {
     return (
       <Shell>
         <EmptyCard

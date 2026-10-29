@@ -20,6 +20,11 @@ import type { VocabStore } from "@/hooks/useVocabStore";
 /** 浮窗 4 个分区的 SSR 冒烟：只验证渲染不抛错、关键文案与数字在位。 */
 
 const STATS: Stats = {
+  coreTotal: 4325,
+  extendedTotal: 998,
+  coreLearned: 100,
+  leechCount: 3,
+  leechShelved: 2,
   todayReviewed: 12,
   todayCorrect: 10,
   todayAccuracy: 10 / 12,

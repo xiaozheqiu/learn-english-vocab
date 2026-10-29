@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 const ITEMS: { route: Route; label: string; Icon: typeof List }[] = [
   { route: "list", label: "词表", Icon: List },
   { route: "review", label: "复习", Icon: BookMarked },
-  { route: "quiz", label: "测试", Icon: Sparkles },
+  { route: "quiz", label: "练习", Icon: Sparkles },
 ];
 
 export interface BottomNavProps {

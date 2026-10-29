@@ -4,6 +4,8 @@ import { buildReviewPlan, type ReviewItem } from "@/lib/session";
 import type { PageProps } from "@/components/contracts";
 
 export interface ReviewPageProps extends PageProps {
+  /** 拿本轮弱词直接开练：复用练习页的 key 白名单机制 */
+  onPracticeWeak: (keys: string[]) => void;
   /** 「去测试」出口，由 App 负责切路由 */
   onGoQuiz: () => void;
 }
@@ -26,7 +28,7 @@ type QueueState = { status: "loading" } | { status: "ready"; items: ReviewItem[]
  * 评分会不断改 records，如果跟着 store 每帧重算，队列会在手里变形。
  * 之后的指针推进完全靠 ReviewSession 内部的已提交栈。
  */
-export function ReviewPage({ store, onExit, onGoQuiz }: ReviewPageProps) {
+export function ReviewPage({ store, onExit, onPracticeWeak, onGoQuiz }: ReviewPageProps) {
   const [round, setRound] = useState(0);
   const [state, setState] = useState<QueueState>({ status: "loading" });
 
@@ -81,6 +83,7 @@ export function ReviewPage({ store, onExit, onGoQuiz }: ReviewPageProps) {
       plan={state.meta}
       store={store}
       onAgain={again}
+      onPracticeWeak={onPracticeWeak}
       onGoQuiz={onGoQuiz}
       onExit={onExit}
     />

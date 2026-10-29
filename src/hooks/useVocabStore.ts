@@ -58,6 +58,12 @@ export interface VocabStore {
   ) => Promise<{ days: number; record: SrsCardRecord }>;
   /** 撤销：把卡片恢复到给定快照（null = 删除该条） */
   restoreCard: (key: string, record: SrsCardRecord | null) => Promise<void>;
+  /**
+   * 让顽固词重新进主队列：把累计 lapse 清零并立即到期。
+   * 不清 stability/difficulty —— 那两项记录的是「这个词对你有多难」，
+   * 清掉会让 FSRS 重新把它当新词，等于把记忆历史也丢了。
+   */
+  relearnLeech: (key: string) => Promise<void>;
   exportData: () => Promise<unknown>;
   importData: (payload: unknown) => Promise<void>;
   wipeProgress: () => Promise<void>;
@@ -234,6 +240,39 @@ export function useVocabStore(): VocabStore {
     }
   }, []);
 
+  const relearnLeech = useCallback(
+    async (key: string) => {
+      setRecords((current) => {
+        const record = current.get(key);
+        if (!record) return current;
+        const next = new Map(current);
+        next.set(key, {
+          ...record,
+          // 归零 lapse 就退出了 leech 判定；due 设为现在，下一轮立刻出现
+          lapses: 0,
+          due: Date.now(),
+          scheduled_days: 0,
+        });
+        return next;
+      });
+      try {
+        const record = records.get(key);
+        if (record) {
+          const updated: SrsCardRecord = {
+            ...record,
+            lapses: 0,
+            due: Date.now(),
+            scheduled_days: 0,
+          };
+          await saveCard(updated);
+        }
+      } catch (error) {
+        setLoadError(String(error));
+      }
+    },
+    [records],
+  );
+
   const grade = useCallback(
     async (key: string, value: Grade, source: ReviewLogRecord["source"]) => {
       const now = new Date();
@@ -352,6 +391,7 @@ export function useVocabStore(): VocabStore {
       setPrefs,
       grade,
       restoreCard,
+      relearnLeech,
       exportData,
       importData,
       wipeProgress,
@@ -372,6 +412,7 @@ export function useVocabStore(): VocabStore {
       setPrefs,
       grade,
       restoreCard,
+      relearnLeech,
       exportData,
       importData,
       wipeProgress,

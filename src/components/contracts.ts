@@ -24,6 +24,8 @@ export interface FloatingPanelProps {
   onOpenGuide: () => void;
   /** 空态/学习分区的「去做测试」 */
   onGoQuiz: () => void;
+  /** 顽固词清单入口 */
+  onOpenLeech: () => void;
   /** 今日日期键，供统计分区展示 */
   today: string;
 }

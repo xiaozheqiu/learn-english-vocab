@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Grade, GradePreview } from "@/lib/srs";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,22 @@ const TONE: Record<Grade, string> = {
 };
 
 export function RatingBar({ previews, onGrade, disabled = false }: RatingBarProps) {
+  /*
+   * 记住刚点了哪一档，给它 120ms 的按下态。
+   * 没有这个反馈时，手指抬起的瞬间画面就切到下一张卡，
+   * 用户不确定自己点的是「记得」还是「很熟」—— 而这两档差了 12 天排期。
+   */
+  const [pressed, setPressed] = useState<Grade | null>(null);
+
+  const handle = (grade: Grade) => {
+    setPressed(grade);
+    // 动效结束再交出去，让按下态看得见；160ms 小于一次点击的自然节奏
+    window.setTimeout(() => {
+      setPressed(null);
+      onGrade(grade);
+    }, 120);
+  };
+
   return (
     <div role="group" aria-label="给这次回忆打分" className="grid grid-cols-4 gap-2">
       {previews.map((preview) => (
@@ -30,13 +47,15 @@ export function RatingBar({ previews, onGrade, disabled = false }: RatingBarProp
           key={preview.grade}
           type="button"
           disabled={disabled}
-          onClick={() => onGrade(preview.grade)}
+          onClick={() => handle(preview.grade)}
           // 读屏拿到完整语义：评分名 + 下次间隔
           aria-label={`${preview.label}，${preview.text}后复习`}
           data-grade={preview.grade}
           aria-keyshortcuts={String(preview.grade)}
           className={cn(
-            "flex min-h-[56px] flex-col items-center justify-center gap-0.5 rounded-btn border px-1 py-2 transition-colors",
+            "flex min-h-[56px] flex-col items-center justify-center gap-0.5 rounded-btn border px-1 py-2 transition-all duration-[var(--dur-fast)]",
+            "active:scale-[0.97]",
+            pressed === preview.grade && "scale-[0.97] brightness-95",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-paper",
             "disabled:pointer-events-none disabled:opacity-40",
             TONE[preview.grade],

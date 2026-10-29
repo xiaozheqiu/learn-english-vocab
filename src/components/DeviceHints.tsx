@@ -21,8 +21,23 @@ export function ContinueHint({ className }: { className?: string }) {
 }
 
 /** 复习页的操作提示：桌面给键盘，触屏只说要点哪里 */
-export function ReviewHint({ className }: { className?: string }) {
+/**
+ * 复习页操作提示。
+ *
+ * `isNew` 必须传：新词只有两个动作（我早就会 / 开始学），
+ * 还印「1–4 评分」会让人去按 3、4，而那两个键在新词上刻意不响应。
+ */
+export function ReviewHint({ className, isNew = false }: { className?: string; isNew?: boolean }) {
   const touch = useIsTouchPrimary();
+  if (isNew) {
+    return (
+      <p className={className}>
+        {touch
+          ? "点「显示释义」，再选「我早就会」或「开始学」"
+          : "空格 显示释义 · 1 我早就会 · 2 开始学"}
+      </p>
+    );
+  }
   return (
     <p className={className}>
       {touch ? "点「显示释义」，再点一档评分" : "空格 显示释义 · 1–4 评分 · ⌘Z 撤销"}

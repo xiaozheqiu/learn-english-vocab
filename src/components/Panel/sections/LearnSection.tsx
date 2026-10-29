@@ -17,6 +17,8 @@ export interface LearnSectionProps {
   stats: Stats;
   prefs: Prefs;
   onPrefsChange: (patch: Partial<Prefs>) => void;
+  /** 打开顽固词清单（累计忘记 ≥8 次的词） */
+  onOpenLeech?: () => void;
   /** 本地日期键；不传则取当天，用来把「今天」那根柱标成 --brand */
   today?: string;
 }
@@ -25,7 +27,13 @@ export interface LearnSectionProps {
  * 学习分区（§2.3 / §5 F5）：今日复习、新词上限、单次题量、期望留存率、
  * 连续天数、未来 7 天到期预测柱。
  */
-export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectionProps) {
+export function LearnSection({
+  stats,
+  prefs,
+  onPrefsChange,
+  onOpenLeech,
+  today,
+}: LearnSectionProps) {
   const todayKey = today ?? dayKey();
 
   // 滑杆用本地草稿：拖动时只动 UI，松手/失焦/键盘抬起才落库，避免每 1% 写一次 IndexedDB
@@ -85,7 +93,51 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
         <p className="mt-1.5 text-[12px] leading-5 text-ink-mute tnum">
           已掌握 {stats.masteredInCooldown} / {SPRINT_TARGET} 个 · 已学 {stats.learned} 个
         </p>
+        {/*
+          两档分开报数。
+          只给「全库 5323」会让人以为还有 5000 个要背，实际上认脸档
+          （998 条生僻/书面词）默认根本不进复习队列 —— 那个分母是虚的。
+        */}
+        <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line/70 pt-2">
+          <div>
+            <p className="text-[11px] text-ink-mute">日常档（要背）</p>
+            <p className="text-[13px] font-medium text-ink tnum">
+              {stats.coreLearned} / {stats.coreTotal}
+            </p>
+          </div>
+          <div>
+            <p className="text-[11px] text-ink-mute">认脸档（可跳过）</p>
+            <p className="text-[13px] font-medium text-ink-soft tnum">{stats.extendedTotal} 个</p>
+          </div>
+        </div>
       </section>
+
+      {/*
+        顽固词入口。
+        单列一行而不是塞进底部导航：导航已有 4 项，第 5 项会挤到 60px 以下，
+        而这是个低频入口（只有确实攒了顽固词时才需要点）。
+        没有顽固词时整行不出现，避免给一个永远空着的入口。
+      */}
+      {stats.leechCount > 0 && (
+        <button
+          type="button"
+          data-testid="leech-entry"
+          onClick={onOpenLeech}
+          className="flex w-full items-center justify-between rounded-card border border-line bg-card px-3 py-2.5 text-left transition-colors hover:border-due/40"
+        >
+          <span>
+            <span className="block text-[13px] font-medium text-ink">
+              顽固词 {stats.leechCount} 个
+            </span>
+            <span className="mt-0.5 block text-[11px] text-ink-mute">
+              累计忘记 8 次以上，{stats.leechShelved} 个已移出复习队列
+            </span>
+          </span>
+          <span aria-hidden="true" className="text-[12px] text-brand-ink">
+            查看
+          </span>
+        </button>
+      )}
 
       <p className="text-[12px] text-ink-mute tnum">
         全库平均留存率 R {percent(stats.averageRetrievability)}
@@ -242,6 +294,83 @@ export function LearnSection({ stats, prefs, onPrefsChange, today }: LearnSectio
         <p className="mt-1 text-[12px] leading-5 text-ink-mute">
           只有拼写与中→英（输出型）一次答对才会算「记得」；英→中最多记「模糊」， 因为四选一有 25%
           是蒙对的。
+        </p>
+      </section>
+
+      {/*
+        复习范围：默认只复习 core 档。
+        extended 档是词频 >5000 或词典无词频数据的词（genocide/asylum/notwithstanding），
+        对听懂日常对话的边际收益接近零，却要占 6–8 秒/张的复习成本。
+        它们仍在词表里可查、可手动标记，只是默认不占复习时间。
+      */}
+      <section>
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-[13px] font-medium text-ink">复习范围</h3>
+          <span className="text-[12px] text-ink-mute tnum">
+            {prefs.includeExtended ? "全库 5323" : "日常档 4325"}
+          </span>
+        </div>
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5" role="group" aria-label="复习范围">
+          {[
+            { value: false, label: "只复习日常词", hint: "词频前 5000" },
+            { value: true, label: "全库都复习", hint: "含生僻与书面词" },
+          ].map((option) => (
+            <button
+              key={String(option.value)}
+              type="button"
+              aria-pressed={prefs.includeExtended === option.value}
+              onClick={() => onPrefsChange({ includeExtended: option.value })}
+              className={cn(
+                "flex h-11 flex-col items-center justify-center rounded-btn border px-1 text-[12px] transition-colors",
+                prefs.includeExtended === option.value
+                  ? "border-brand bg-brand-wash font-medium text-brand-ink"
+                  : "border-line bg-card text-ink-soft hover:border-brand/40",
+              )}
+            >
+              <span>{option.label}</span>
+              <span className="text-[11px] opacity-70">{option.hint}</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+          「认脸档」的词（genocide、asylum、notwithstanding 这类）不占复习时间，
+          但仍可在词表里查到、也可以手动标记。
+        </p>
+      </section>
+
+      {/*
+        新词难度上限（CEFR）。
+        与下面的「复习范围」是两件事：这里管「多难的新词先进来」，
+        复习范围管「生僻词进不进队列」。已有复习中的词不受这里限制。
+      */}
+      <section>
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-[13px] font-medium text-ink">新词难度上限</h3>
+          <span className="text-[12px] text-ink-mute tnum">
+            {prefs.cefrCap ? prefs.cefrCap.toUpperCase() : "不限"}
+          </span>
+        </div>
+        <div className="mt-1.5 grid grid-cols-4 gap-1.5" role="group" aria-label="新词难度上限">
+          {(["" as const, "a2", "b1", "b2"] as const).map((value) => (
+            <button
+              key={value || "none"}
+              type="button"
+              aria-pressed={prefs.cefrCap === value}
+              onClick={() => onPrefsChange({ cefrCap: value })}
+              className={cn(
+                "h-11 rounded-btn border px-1 text-[12px] transition-colors",
+                prefs.cefrCap === value
+                  ? "border-brand bg-brand-wash font-medium text-brand-ink"
+                  : "border-line bg-card text-ink-soft hover:border-brand/40",
+              )}
+            >
+              {value ? value.toUpperCase() : "不限"}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+          按牛津义项级 CEFR 排新词，先易后难。设成 B1 时只发 a1–b1 的新词，
+          更适合「先能听说」的目标；已在复习中的词不受影响。
         </p>
       </section>
 

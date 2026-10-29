@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { NewWordBar } from "./NewWordBar";
 import { RatingBar } from "./RatingBar";
 import { ReviewCard } from "./ReviewCard";
-import { ReviewDone, type ReviewSummary } from "./ReviewDone";
+import { ReviewDone, type ReviewSummary, type WeakWord } from "./ReviewDone";
 import { saveDay } from "@/lib/db";
 import { dayKey, formatInterval } from "@/lib/date";
 import { previewGrades, type Grade } from "@/lib/srs";
@@ -27,6 +28,11 @@ interface Step {
   word: string;
   /** 这张是本轮补考（答错后末尾重来），统计时不算新学 */
   retry?: boolean;
+  /**
+   * 这一步是「我早就会」而不是评分。
+   * 撤销时必须取消 mastery，并且不碰 FSRS 记录 —— 两条轨是分开的。
+   */
+  masteredByKnow?: boolean;
 }
 
 export interface ReviewSessionProps {
@@ -37,6 +43,8 @@ export interface ReviewSessionProps {
   store: VocabStore;
   /** 「再来一轮」：由页面重新构建队列 */
   onAgain: () => void;
+  /** 拿本轮弱词直接开练（练习页的 key 白名单入口） */
+  onPracticeWeak: (keys: string[]) => void;
   onGoQuiz: () => void;
   onExit: () => void;
 }
@@ -57,6 +65,7 @@ function ReviewRunner({
   plan,
   store,
   onAgain,
+  onPracticeWeak,
   onGoQuiz,
   onExit,
 }: ReviewSessionProps) {
@@ -80,6 +89,8 @@ function ReviewRunner({
   const done = steps.length;
   const current = items[done] ?? null;
   const record = current ? (store.records.get(current.word.key) ?? current.record) : null;
+  /** 从没评过分 = 第一次见。决定显示两档还是四档，键盘也按它分叉。 */
+  const isNew = !record || record.reps <= 0;
 
   // 预览按「库里当前的卡片」算：撤销后重新评分时，印的间隔仍然是真实排期（验收 4）。
   // record 为 null = 新词，previewGrades 自己会按空卡算，四档按钮必须照样出现。
@@ -135,15 +146,55 @@ function ReviewRunner({
     [done, items, previews, store],
   );
 
+  /**
+   * 「我早就会」：标记已掌握，不再占日常复习时间。
+   *
+   * 不写 FSRS 记录 —— 已掌握走的是 mastery 这条轨，30 天后会自己回来抽查一次。
+   * 同时推进指针并记入 steps，保证「撤销」仍然可用。
+   */
+  const knowAlready = useCallback(async () => {
+    const item = items[done];
+    if (!item || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      const before = store.records.get(item.word.key) ?? null;
+      await store.toggleMastery([item.word.key], true);
+      setSteps((prev) => [
+        ...prev,
+        {
+          key: item.word.key,
+          before,
+          grade: 4,
+          wasNew: true,
+          day: dayKey(),
+          word: item.word.word,
+          retry: Boolean(item.retry),
+          masteredByKnow: true,
+        },
+      ]);
+      setRevealed(false);
+      setNotice(`已把 ${item.word.word} 标为已掌握`);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [done, items, store]);
+
   const undo = useCallback(async () => {
     const step = steps[steps.length - 1];
     if (!step || busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     try {
-      await store.restoreCard(step.key, step.before);
-      // restoreCard 只回滚卡片；reviewed/correct/newWords 是 grade 写的，得单独退
-      await rollbackDay(store, step);
+      if (step.masteredByKnow) {
+        // 「我早就会」走的是 mastery 轨，没写 FSRS 记录，撤销只需取消标记
+        await store.toggleMastery([step.key], false);
+      } else {
+        await store.restoreCard(step.key, step.before);
+        // restoreCard 只回滚卡片；reviewed/correct/newWords 是 grade 写的，得单独退
+        await rollbackDay(store, step);
+      }
       // 让 days / records / prefs 重新读库，统计与浮窗不会停在旧值
       await store.refresh();
       setSteps((prev) => prev.slice(0, -1));
@@ -163,7 +214,10 @@ function ReviewRunner({
     }
   }, [steps, store]);
 
-  // 键盘：空格/回车翻面、1–4 评分、Ctrl/Cmd+Z 撤销（§7 全部键盘可达）
+  /*
+   * 键盘：空格/回车翻面，1–4 评分，Ctrl/Cmd+Z 撤销。
+   * 新词只有两个动作：1 = 我早就会，2 = 开始学。
+   */
   // 复习页常驻挂载，切到别的 tab 后这些键必须停用，否则在词表/测试里会误评分。
   const active = usePageActive();
   useEffect(() => {
@@ -195,6 +249,20 @@ function ReviewRunner({
         return;
       }
       if (!revealed) return;
+      /*
+       * 新词只有两个动作，键位也相应收窄：
+       * 1 = 我早就会，2 = 开始学。按 3/4 无反应，避免误触后静默记了一笔。
+       */
+      if (isNew) {
+        if (event.key === "1") {
+          event.preventDefault();
+          void knowAlready();
+        } else if (event.key === "2") {
+          event.preventDefault();
+          void submit(3);
+        }
+        return;
+      }
       if (["1", "2", "3", "4"].includes(event.key)) {
         event.preventDefault();
         void submit(Number(event.key) as Grade);
@@ -202,13 +270,14 @@ function ReviewRunner({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, revealed, reveal, submit, undo, summary, done, total]);
+  }, [active, isNew, knowAlready, revealed, reveal, submit, undo, summary, done, total]);
 
   const summaryOf = useCallback(
     (list: readonly Step[]): ReviewSummary => ({
       reviewed: list.length,
       byGrade: countGrades(list),
       durationMs: Date.now() - startedAt.current,
+      weak: collectWeak(list),
     }),
     [],
   );
@@ -229,6 +298,7 @@ function ReviewRunner({
         summary={finished}
         carryOver={plan?.carryOver ?? 0}
         onAgain={onAgain}
+        onPracticeWeak={onPracticeWeak}
         onGoQuiz={onGoQuiz}
         onExit={onExit}
       />
@@ -237,7 +307,6 @@ function ReviewRunner({
 
   if (!current) return null;
 
-  const isNew = !record || record.reps <= 0;
   const percentDone = (done / total) * 100;
 
   return (
@@ -286,7 +355,7 @@ function ReviewRunner({
         <Progress
           value={percentDone}
           label={`复习进度：已完成 ${done} 张，共 ${total} 张`}
-          className="flex-1"
+          className="flex-1 transition-[background] duration-[var(--dur-slow)]"
         />
         <span aria-hidden="true" className="text-[12px] tnum text-ink-mute">
           {done}/{total}
@@ -298,19 +367,41 @@ function ReviewRunner({
         {notice}
       </p>
 
-      <div className="mt-4">
+      {/*
+        key 用 word.key：换卡时 React 会重建节点，卡片的进入动效才会重放。
+        不用 index —— 撤销回到上一张时 index 会撞车，动效就不触发。
+      */}
+      <div key={current.word.key} className="mt-4 animate-[var(--animate-card-in)]">
         <ReviewCard word={current.word} revealed={revealed} onReveal={reveal} />
       </div>
 
       <div className="mt-3">
         {revealed ? (
-          <RatingBar previews={previews} onGrade={(grade) => void submit(grade)} disabled={busy} />
+          isNew ? (
+            /*
+             * 新词只给两个动作。
+             * 四档评分的前提是「你回忆起了多少」，而第一次见一个词时
+             * 这个前提不成立 —— 你没回忆起任何东西，只是刚看到。
+             * 详见 NewWordBar 的注释。
+             */
+            <NewWordBar
+              onKnow={() => void knowAlready()}
+              onLearn={() => void submit(3)}
+              disabled={busy}
+            />
+          ) : (
+            <RatingBar
+              previews={previews}
+              onGrade={(grade) => void submit(grade)}
+              disabled={busy}
+            />
+          )
         ) : (
           <p className="text-center text-[12px] text-ink-mute">先在心里回忆一遍，再显示释义</p>
         )}
       </div>
 
-      <ReviewHint className="mt-5 text-center text-[12px] text-ink-mute" />
+      <ReviewHint isNew={isNew} className="mt-5 text-center text-[12px] text-ink-mute" />
       <div className="mt-1 text-center">
         <Button variant="link" size="sm" onClick={onGoQuiz}>
           直接去测试
@@ -378,6 +469,29 @@ async function rollbackDay(store: VocabStore, step: Step): Promise<void> {
     wrong: Math.max(0, current.wrong - (step.grade === 1 ? 1 : 0)),
     newWords: Math.max(0, current.newWords - (step.wasNew ? 1 : 0)),
   } satisfies DayRecord);
+}
+
+/**
+ * 本轮没记牢的词：只取每个词的**最后一次**评分。
+ *
+ * 为什么按最后一次：答错后本轮末尾会补考一次，补考答对说明当轮已经修复，
+ * 再把它列进「没记牢」会让用户白练一遍。反过来补考又错，那才是真没记住。
+ *
+ * 「我早就会」的步骤不计入 —— 它压根没走评分，不是弱词。
+ */
+function collectWeak(steps: readonly Step[]): WeakWord[] {
+  const last = new Map<string, { word: string; grade: Grade }>();
+  for (const step of steps) {
+    if (step.masteredByKnow) continue;
+    last.set(step.key, { word: step.word, grade: step.grade });
+  }
+  const out: WeakWord[] = [];
+  for (const [key, value] of last) {
+    if (value.grade <= 2) out.push({ key, word: value.word, grade: value.grade });
+  }
+  // 忘记排在模糊前面：更需要先处理
+  out.sort((a, b) => a.grade - b.grade);
+  return out;
 }
 
 function countGrades(steps: readonly Step[]): Record<Grade, number> {

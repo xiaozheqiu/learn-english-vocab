@@ -10,7 +10,21 @@ import {
 import type { SrsCardRecord, Word } from "../types";
 
 function word(key: string, w: string, cn: string, pos = "n.", level: Word["level"] = "A1"): Word {
-  return { key, level, word: w, pos, cn, scope: "3000", seq: "" };
+  return {
+    key,
+    level,
+    word: w,
+    pos,
+    cn,
+    scope: "3000",
+    seq: "",
+    rank: 0,
+    tier: "core",
+    cefr: "",
+    senseCefr: [],
+    ox3000: false,
+    ox5000: false,
+  };
 }
 
 const words: Word[] = [

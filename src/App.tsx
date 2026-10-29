@@ -7,6 +7,7 @@ import { SetupWizard } from "@/components/SetupWizard";
 import { WordListPage } from "@/components/WordList";
 import { ReviewPage } from "@/components/Review";
 import { QuizPage } from "@/components/Quiz";
+import { LeechPage } from "@/components/Leech";
 import { FloatingPanel } from "@/components/Panel/FloatingPanel";
 import { GuidePage } from "@/components/GuidePage";
 import { UpdatePrompt } from "@/components/UpdatePrompt";
@@ -24,6 +25,7 @@ const ROUTE_TITLES: Record<Route, string> = {
   list: "词表",
   review: "复习",
   quiz: "测试",
+  leech: "顽固词",
   guide: "词性对照",
 };
 
@@ -157,7 +159,7 @@ function AppShell() {
         records: store.records,
         mastered: store.mastered,
         days: store.days,
-        prefs: { retention: store.prefs.retention },
+        prefs: { retention: store.prefs.retention, includeExtended: store.prefs.includeExtended },
         now: new Date(minuteTick),
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- minuteTick 只是「到点重算」的信号
@@ -207,12 +209,45 @@ function AppShell() {
     navigate("quiz");
   }, []);
 
+  /**
+   * 底部导航点「练习」= 开始一轮正常的全量练习。
+   *
+   * 之前直接传 navigate，白名单不会被清除：用户点过「只练这 2 个」之后，
+   * 再点底部导航进来仍然只有那 2 道题，且看不出为什么。
+   * 白名单是一次性指令，导航进入必须复位它。
+   */
+  const openQuiz = useCallback(() => {
+    /*
+     * 有白名单残留时才重抽，否则只切页。
+     *
+     * 两条规则要同时成立：
+     *   1. 点过「只练这 N 个」之后，再点底部导航应是正常全量练习 ——
+     *      白名单是一次性指令，不清掉的话用户会莫名其妙只有几道题。
+     *   2. 没有白名单时，切页必须保留正在做的那套题 ——
+     *      切去词表查个词再回来，不该被踢回第 1 题（这是常驻面板的设计意图）。
+     * 所以只有「确有白名单」才重置序号重抽。
+     */
+    if (onlyKeys !== null) {
+      setOnlyKeys(null);
+      setQuizTicket((n) => n + 1);
+    }
+    navigate("quiz");
+  }, [onlyKeys]);
+
   /** 只练错题：把白名单和一次新的请求序号一起交给测试页 */
   const practiceWrong = useCallback((keys: string[]) => {
     setOnlyKeys(keys);
     setQuizTicket((n) => n + 1);
     navigate("quiz");
   }, []);
+
+  const handleNavigate = useCallback(
+    (next: Route) => {
+      if (next === "quiz") openQuiz();
+      else navigate(next);
+    },
+    [openQuiz],
+  );
 
   /* ── 首次设置完成 ──────────────────────────────────────────── */
   const onSetupDone = useCallback(
@@ -285,7 +320,7 @@ function AppShell() {
               [
                 ["list", "词表"],
                 ["review", "复习"],
-                ["quiz", "测试"],
+                ["quiz", "练习"],
               ] as const
             ).map(([value, label]) => (
               <button
@@ -331,7 +366,12 @@ function AppShell() {
           <WordListPage store={store} onGoReview={() => navigate("review")} onGoQuiz={startQuiz} />
         </TabPane>
         <TabPane active={activeRoute === "review"}>
-          <ReviewPage store={store} onExit={() => navigate("list")} onGoQuiz={startQuiz} />
+          <ReviewPage
+            store={store}
+            onExit={() => navigate("list")}
+            onPracticeWeak={practiceWrong}
+            onGoQuiz={startQuiz}
+          />
         </TabPane>
         <TabPane active={activeRoute === "quiz"}>
           <QuizPage
@@ -343,13 +383,16 @@ function AppShell() {
             onGoReview={() => navigate("review")}
           />
         </TabPane>
+        <TabPane active={activeRoute === "leech"}>
+          <LeechPage store={store} onExit={() => navigate("list")} />
+        </TabPane>
         <TabPane active={activeRoute === "guide"}>
           <GuidePage onBack={() => navigate("list")} />
         </TabPane>
       </main>
 
       {showNav && (
-        <BottomNav current={activeRoute} dueCount={stats.dueToday} onNavigate={navigate} />
+        <BottomNav current={activeRoute} dueCount={stats.dueToday} onNavigate={handleNavigate} />
       )}
 
       <FloatingPanel
@@ -368,6 +411,10 @@ function AppShell() {
         onGoQuiz={() => {
           setPanelOpen(false);
           startQuiz();
+        }}
+        onOpenLeech={() => {
+          setPanelOpen(false);
+          navigate("leech");
         }}
         today={dayKey()}
       />

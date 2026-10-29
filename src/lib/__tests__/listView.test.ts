@@ -10,7 +10,21 @@ import {
 import type { Word } from "../types";
 
 function w(level: Word["level"], word: string, cn = "释义"): Word {
-  return { key: `${level}|${word}|n.`, level, word, pos: "n.", cn, scope: "3000", seq: "" };
+  return {
+    key: `${level}|${word}|n.`,
+    level,
+    word,
+    pos: "n.",
+    cn,
+    scope: "3000",
+    seq: "",
+    rank: 0,
+    tier: "core",
+    cefr: "",
+    senseCefr: [],
+    ox3000: false,
+    ox5000: false,
+  };
 }
 
 const WORDS: Word[] = [
@@ -26,7 +40,14 @@ function masteredOf(keys: readonly string[]) {
   return { has: (key: string) => set.has(key) };
 }
 
-const ALL: ListCriteria = { level: "ALL", mode: "all", query: "" };
+const ALL: ListCriteria = {
+  level: "ALL",
+  mode: "all",
+  tier: "all",
+  cefr: "all",
+  oxford: "all",
+  query: "",
+};
 
 describe("视图状态解析", () => {
   it("空值 / 非对象回落成默认视图", () => {
@@ -44,8 +65,19 @@ describe("视图状态解析", () => {
   });
 
   it("逐字段回落：等级非法不影响页码和搜索词", () => {
-    const view = parseListView({ level: "Z9", mode: "todo", query: "ab", page: 7 }, "A1");
-    expect(view).toEqual({ level: "A1", mode: "todo", query: "ab", page: 7 });
+    const view = parseListView(
+      { level: "Z9", mode: "todo", tier: "all", cefr: "all", oxford: "all", query: "ab", page: 7 },
+      "A1",
+    );
+    expect(view).toEqual({
+      level: "A1",
+      mode: "todo",
+      tier: "all",
+      cefr: "all",
+      oxford: "all",
+      query: "ab",
+      page: 7,
+    });
   });
 
   it("页码只接受正整数，搜索词截断到 80 字", () => {
@@ -64,7 +96,11 @@ describe("词表过滤", () => {
   });
 
   it("搜索跨全部等级，不服从等级筛选", () => {
-    const rows = filterWords(WORDS, { level: "A1", mode: "all", query: "abandon" }, masteredOf([]));
+    const rows = filterWords(
+      WORDS,
+      { level: "A1", mode: "all", tier: "all", cefr: "all", oxford: "all", query: "abandon" },
+      masteredOf([]),
+    );
     expect(rows.map((r) => r.level)).toEqual(["A1", "B2"]);
   });
 
@@ -81,9 +117,19 @@ describe("词表过滤", () => {
 
   it("未掌握 / 已掌握与等级叠加", () => {
     const mastered = masteredOf(["A1|apple|n."]);
-    expect(filterWords(WORDS, { level: "A1", mode: "todo", query: "" }, mastered)).toHaveLength(1);
     expect(
-      filterWords(WORDS, { level: "A1", mode: "done", query: "" }, mastered).map((r) => r.word),
+      filterWords(
+        WORDS,
+        { level: "A1", mode: "todo", tier: "all", cefr: "all", oxford: "all", query: "" },
+        mastered,
+      ),
+    ).toHaveLength(1);
+    expect(
+      filterWords(
+        WORDS,
+        { level: "A1", mode: "done", tier: "all", cefr: "all", oxford: "all", query: "" },
+        mastered,
+      ).map((r) => r.word),
     ).toEqual(["apple"]);
   });
 });

@@ -7,6 +7,7 @@
  */
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import {
+  isCefr,
   DB_NAME,
   DB_VERSION,
   DEFAULT_PREFS,
@@ -226,6 +227,17 @@ export function normalizePrefs(value: unknown): Prefs {
   merged.pageSize = clampPageSize(merged.pageSize);
   // 老库里的 newPerDay 字段直接丢弃：新词不再有每日配额，字段已从 Prefs 移除
   delete (merged as { newPerDay?: unknown }).newPerDay;
+  // 字符串 "true" 之类一律收敛成布尔：老库里可能来自 JSON 导入
+  merged.includeExtended =
+    value !== null && typeof value === "object"
+      ? (value as { includeExtended?: unknown }).includeExtended === true
+      : false;
+  // CEFR 上限只接受已知分级，其余（老库没有这个字段、手改成的乱值）回落成「不限」
+  const rawCap =
+    value !== null && typeof value === "object"
+      ? (value as { cefrCap?: unknown }).cefrCap
+      : undefined;
+  merged.cefrCap = isCefr(rawCap) ? rawCap : "";
   return merged;
 }
 

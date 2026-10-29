@@ -78,8 +78,28 @@ describe("释义与词性", () => {
       cn: "",
       scope: "",
       seq: "",
+      rank: 0,
+      tier: "core",
+      cefr: "",
+      senseCefr: [],
+      ox3000: false,
+      ox5000: false,
     } as const;
-    const b = { key: "b", level: "A1", word: "y", pos: "v.", cn: "", scope: "", seq: "" } as const;
+    const b = {
+      key: "b",
+      level: "A1",
+      word: "y",
+      pos: "v.",
+      cn: "",
+      scope: "",
+      seq: "",
+      rank: 0,
+      tier: "core",
+      cefr: "",
+      senseCefr: [],
+      ox3000: false,
+      ox5000: false,
+    } as const;
     const c = {
       key: "c",
       level: "A1",
@@ -88,6 +108,12 @@ describe("释义与词性", () => {
       cn: "",
       scope: "",
       seq: "",
+      rank: 0,
+      tier: "core",
+      cefr: "",
+      senseCefr: [],
+      ox3000: false,
+      ox5000: false,
     } as const;
     expect(samePos(a, b)).toBe(true);
     expect(samePos(a, c)).toBe(false);

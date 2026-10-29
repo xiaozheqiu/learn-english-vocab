@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,24 @@ export function Pager({ page, pages, total, onPage }: PagerProps) {
   const go = (next: number) => {
     const target = Math.min(Math.max(1, Math.round(next) || 1), Math.max(1, pages));
     if (target !== page) onPage(target);
+  };
+
+  /*
+   * 页码输入框用本地草稿，失焦或回车才提交。
+   *
+   * 之前直接受控于 `page` 并在 onChange 里 go()：输入「3」的第一个字符是 3，
+   * go(3) 把页码改成 3，组件重渲染后 value 又被约束回 3，
+   * 但用户继续输入「12」时它已经被截断 —— 表现为「输入的数字不生效」。
+   * 改成草稿后：输入过程不受外部值干扰，提交时机明确。
+   */
+  const [draft, setDraft] = useState(String(page));
+  // 外部翻页（上一页/下一页/筛选变了导致页码回落）时同步草稿
+  useEffect(() => setDraft(String(page)), [page]);
+
+  const commit = () => {
+    go(Number(draft));
+    // 提交后回到真实页码：输入 999 会被夹到最后一页，草稿也要跟着收敛
+    setDraft(String(page));
   };
 
   return (
@@ -46,8 +65,15 @@ export function Pager({ page, pages, total, onPage }: PagerProps) {
         inputMode="numeric"
         min={1}
         max={Math.max(1, pages)}
-        value={page}
-        onChange={(event) => go(Number(event.target.value))}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+        }}
         className="h-11 w-14 px-1 text-center"
       />
       <span className="tnum text-ink-mute">/ {pages}</span>

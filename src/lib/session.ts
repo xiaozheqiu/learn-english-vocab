@@ -3,8 +3,9 @@
  * 纯函数：输入快照，输出计划，不碰存储。
  */
 import { dayKey, nextDays, startOfDay } from "./date";
-import { isDue, retrievability } from "./srs";
+import { isDue, isLeech, isShelvedAsLeech, retrievability } from "./srs";
 import {
+  CEFR_RANK,
   MASTERY_COOLDOWN_DAYS,
   type DayRecord,
   type Prefs,
@@ -87,7 +88,7 @@ export interface BuildPlanInput {
   records: ReadonlyMap<string, SrsCardRecord>;
   /** key → 「已掌握」标记时间 */
   mastered: ReadonlyMap<string, number>;
-  prefs: Pick<Prefs, "reviewSize" | "retention">;
+  prefs: Pick<Prefs, "reviewSize" | "retention" | "includeExtended" | "cefrCap">;
   now?: Date;
 }
 
@@ -104,6 +105,15 @@ export interface BuildPlanInput {
 export function buildReviewPlan(input: BuildPlanInput): ReviewPlan {
   const now = input.now ?? new Date();
   const { records, mastered, prefs } = input;
+  const includeExtended = prefs.includeExtended === true;
+  /*
+   * CEFR 上限：只给「不超过这个难度」的新词。
+   *
+   * 空串 = 不限。分级来自牛津义项级标注，是最可靠的难度信号：
+   * 同一个词的不同义项能跨 4 级（above: a1 的「在上方」到 c2 的「自视过高」），
+   * 整词标签做不到这点。用它排序比按词频排序更贴近「读得懂、用得上」。
+   */
+  const cefrCap = prefs.cefrCap ?? "";
 
   const due: ReviewItem[] = [];
   const fresh: ReviewItem[] = [];
@@ -111,6 +121,14 @@ export function buildReviewPlan(input: BuildPlanInput): ReviewPlan {
   for (const word of input.words) {
     // 免检期内的已掌握词跳过；过了冷却期照常进队，考一次再续期
     if (isShelved(mastered, word.key, now)) continue;
+    /*
+     * extended 档不进复习队列。
+     *
+     * 这一档是「词频 >5000 或词典无数据」的词 —— genocide/asylum/notwithstanding
+     * 这类，对听懂日常对话的边际收益接近零，却要占 6–8 秒/张的复习成本。
+     * 它们仍然留在词表里可查、可手动加回队列（见 prefs.includeExtended）。
+     */
+    if (word.tier === "extended" && !includeExtended) continue;
     const record = records.get(word.key) ?? null;
     if (!record || record.reps <= 0) {
       // 已掌握但到期抽查的词算「到期」，其余算新词
@@ -121,6 +139,13 @@ export function buildReviewPlan(input: BuildPlanInput): ReviewPlan {
       fresh.push({ word, record, r: 0, overdue: 0 });
       continue;
     }
+    /*
+     * 顽固词挡在主队列外（冷却期内）。
+     * 这是本应用唯一「主动放弃」某张卡的机制，理由见 LEECH_THRESHOLD 的注释：
+     * 反复忘记的词每天占 6–8 秒却始终记不住，会把整轮复习拖成消耗战。
+     * 冷却结束后 isShelvedAsLeech 返回 false，它会自己回来考一次。
+     */
+    if (isShelvedAsLeech(record, now)) continue;
     if (!isDue(record, now)) continue;
     const overdue = Math.max(0, Math.floor((now.getTime() - record.due) / 86_400_000));
     due.push({
@@ -135,7 +160,38 @@ export function buildReviewPlan(input: BuildPlanInput): ReviewPlan {
 
   // 到期卡优先；新词每轮最多给一批，剩下的留到下一轮
   const limit = Math.max(1, prefs.reviewSize);
-  const freshBatch = fresh.slice(0, Math.min(NEW_BATCH, limit));
+  /*
+   * 新词按口语词频顺序取，不按数据原始顺序。
+   *
+   * 数据文件是字母序，直接 slice 会先把 abandon / abolish / abrupt 这批
+   * 抽象书面词灌给用户 —— 它们互相干扰强、口语里几乎不出现，背了也用不上。
+   * rank 由 scripts/gen-tiers.py 按 ECDICT 词频生成，A 档（前 2899）覆盖
+   * 日常文本约 85%。rank 为 0（分档文件缺失）的排到最后，退化为原顺序。
+   */
+  /*
+   * 新词排序：先按 CEFR 难度，再按口语词频。
+   *
+   * 只按词频排的问题：the / be / of 固然最高频，但它们的 CEFR 是 a1，
+   * 而 frequency 排到第 3000 位的词可能已经是 c1 —— 两个信号回答的问题不同。
+   * CEFR 回答「这个词有多难」，词频回答「这个词多常用」。先难后常用，
+   * 保证你在任何时候打开，最先遇到的是「又常用又不难」的词。
+   * 牛津未标分级（空串）的排在有分级的之后，但仍早于 extended 档。
+   */
+  const cefrRank = (word: { cefr: string }) =>
+    word.cefr ? CEFR_RANK[word.cefr as keyof typeof CEFR_RANK] : 99;
+  fresh.sort((a, b) => {
+    const ca = cefrRank(a.word);
+    const cb = cefrRank(b.word);
+    if (ca !== cb) return ca - cb;
+    const ra = a.word.rank || Number.MAX_SAFE_INTEGER;
+    const rb = b.word.rank || Number.MAX_SAFE_INTEGER;
+    return ra === rb ? a.word.key.localeCompare(b.word.key) : ra - rb;
+  });
+  // 难度上限：超过 cap 的新词这一轮先不给（不是删除，仍在池子里）
+  const capped = cefrCap
+    ? fresh.filter((item) => cefrRank(item.word) <= CEFR_RANK[cefrCap])
+    : fresh;
+  const freshBatch = capped.slice(0, Math.min(NEW_BATCH, limit));
   const merged = [...due, ...freshBatch];
   const items = merged.slice(0, limit);
   return {
@@ -165,6 +221,16 @@ export interface Stats {
   newToday: number;
   /** 已掌握且仍在免检期内的词数（不重复算进 learned） */
   masteredInCooldown: number;
+  /** 日常档词数（进复习队列的那部分） */
+  coreTotal: number;
+  /** 认脸档词数（默认不进复习队列） */
+  extendedTotal: number;
+  /** 日常档里已学过的条数，用于真实进度条 */
+  coreLearned: number;
+  /** 顽固词总数（累计忘记 ≥ LEECH_THRESHOLD） */
+  leechCount: number;
+  /** 其中正被挡在主队列外的（冷却期内） */
+  leechShelved: number;
 }
 
 const WEEK_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -174,7 +240,7 @@ export interface StatsInput {
   records: ReadonlyMap<string, SrsCardRecord>;
   mastered: ReadonlyMap<string, number>;
   days: ReadonlyMap<string, DayRecord>;
-  prefs: Pick<Prefs, "retention">;
+  prefs: Pick<Prefs, "retention" | "includeExtended">;
   now?: Date;
 }
 
@@ -207,6 +273,13 @@ export function computeStats(input: StatsInput): Stats {
   let learned = 0;
   let masteredInCooldown = 0;
   let dueToday = 0;
+  let coreTotal = 0;
+  let extendedTotal = 0;
+  let coreLearned = 0;
+  let leechCount = 0;
+  let leechShelved = 0;
+  // 口径与 buildReviewPlan 保持一致：extended 档在不开启时压根不进队列
+  const includeExtended = (input.prefs as { includeExtended?: boolean }).includeExtended === true;
   const nowMs = now.getTime();
 
   for (const word of input.words) {
@@ -215,9 +288,28 @@ export function computeStats(input: StatsInput): Stats {
       masteredInCooldown += 1;
       continue;
     }
+    if (word.tier === "extended") {
+      extendedTotal += 1;
+      // extended 档默认不进复习队列（见 buildReviewPlan），因此也不该计入到期数
+      if (!includeExtended) continue;
+    } else coreTotal += 1;
     const record = input.records.get(word.key);
     if (record && record.reps > 0) {
       learned += 1;
+      if (word.tier !== "extended") coreLearned += 1;
+      if (isLeech(record)) leechCount += 1;
+      /*
+       * 被 leech 挡住的词不计入「今天到期」，也不能进预测柱。
+       *
+       * 否则底部导航会显示「待复习 3」，点进去队列里只有 1 个 ——
+       * 用户会以为复习页丢了词。这个数字必须与 buildReviewPlan 的口径一致：
+       * 凡是不进队列的，都不该在「今天待复习」里出现。
+       */
+      const blocked = isShelvedAsLeech(record, now);
+      if (blocked) {
+        leechShelved += 1;
+        continue;
+      }
       scored.push(retrievability(record, now, input.prefs.retention));
       if (record.due <= nowMs) dueToday += 1;
       for (let i = 0; i < bounds.length; i += 1) {
@@ -247,6 +339,11 @@ export function computeStats(input: StatsInput): Stats {
     dueToday,
     newToday: today?.newWords ?? 0,
     masteredInCooldown,
+    coreTotal,
+    extendedTotal,
+    coreLearned,
+    leechCount,
+    leechShelved,
   };
 }
 

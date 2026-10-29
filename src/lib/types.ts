@@ -27,7 +27,64 @@ export interface Word {
   scope: string;
   /** 词条序号，未使用为 "" */
   seq: string;
+  /**
+   * 口语词频学习顺序（1 起）。
+   *
+   * data/*.js 本身按字母序排，字母序会把 abandon / abolish / abrupt 这类
+   * 抽象书面词顶到最前，背起来既无语境又互相干扰。这里用 ECDICT 的
+   * frq/bnc 词频重排，A 档（前 2899）覆盖日常文本约 85%，先学完再碰书面词。
+   * 0 = 未取到分档（不应出现，兜底排到最后）。
+   */
+  rank: number;
+  /**
+   * 学习档位：core = 日常听说够用；extended = 认脸即可。
+   *
+   * 按口语词频（≤5000）切，不按 A1–C1 等级切。等级是教学大纲难度，
+   * 不是常用度：C1 里既有 genocide/asylum 这类政治史词，也有 abuse/attorney/
+   * burden 这类新闻口语高频词，按等级一刀切会把后者一起干掉。
+   */
+  tier: Tier;
+  /**
+   * 词条级 CEFR（取首义 = 最常用义的难度）。空串 = 牛津未标。
+   * 用于按难度筛词与「新词从易到难」的排序。
+   */
+  cefr: Cefr | "";
+  /** 每个义项各自的 CEFR，与 cn 里的 `；` 分段一一对应；牛津未标处为空串 */
+  senseCefr: readonly (Cefr | "")[];
+  /** 牛津官方 Oxford 3000 / 5000 标记 */
+  ox3000: boolean;
+  ox5000: boolean;
 }
+
+/**
+ * 牛津 CEFR 分级（义项级）。
+ *
+ * 与项目自身的 A1–C1 标签不是同一套口径：
+ *   - 项目标签是「整词难度」，来自旧数据，一个词只有一个值
+ *   - CEFR 是「义项难度」，同一个词的不同义项可以跨 4 级
+ *     例：above 的「在上方」是 a1，「自视过高」是 c2
+ * 调度按词条级 CEFR（取首义，即最常用义），义项级在复习卡上逐条显示。
+ */
+export type Cefr = "a1" | "a2" | "b1" | "b2" | "c1" | "c2";
+
+export const CEFR_LEVELS: readonly Cefr[] = ["a1", "a2", "b1", "b2", "c1", "c2"];
+
+/** CEFR 数值序，用于「按难度排序」与「取最易/最难义」 */
+export const CEFR_RANK: Record<Cefr, number> = { a1: 1, a2: 2, b1: 3, b2: 4, c1: 5, c2: 6 };
+
+export function isCefr(value: unknown): value is Cefr {
+  return typeof value === "string" && (CEFR_LEVELS as readonly string[]).includes(value);
+}
+
+/** core 进入复习队列；extended 默认只在词表里可查，不占复习时间 */
+export type Tier = "core" | "extended";
+
+export const TIERS: readonly Tier[] = ["core", "extended"];
+
+export const TIER_LABELS: Record<Tier, string> = {
+  core: "日常",
+  extended: "认脸",
+};
 
 /** 原始数据行：[单词, 词性, 中文释义, 3000/5000, 序号] */
 export type RawRow = [string, string, string, string, (number | string | undefined)?];
@@ -35,7 +92,7 @@ export type RawRow = [string, string, string, string, (number | string | undefin
 export type MasteryFilter = "all" | "todo" | "done";
 
 /** 状态左栏的语义分类（§1.5） */
-export type StatusKind = "new" | "due" | "learning" | "solid" | "mastered";
+export type StatusKind = "new" | "due" | "learning" | "solid" | "mastered" | "leech";
 
 export interface StatusInfo {
   kind: StatusKind;
@@ -114,6 +171,21 @@ export interface Prefs {
   autoLockMinutes: number;
   /** 测试启用的题型 */
   quizTypes: QuizType[];
+  /**
+   * 是否把 extended 档（词频 >5000 / 无词频数据）也放进复习队列。
+   *
+   * 默认 false：这一档对听说几乎没有贡献，却要占 6–8 秒/张的复习成本。
+   * 打开后行为与改版前一致（全库都进队列），用于「我要把 5323 条全过一遍」。
+   */
+  includeExtended: boolean;
+  /**
+   * 新词难度上限（CEFR）。空串 = 不限。
+   *
+   * 与「复习范围」是两件事：includeExtended 决定生僻词进不进队列，
+   * cefrCap 决定多难的新词先进来。设为 b1 时，c1/c2 的新词暂时不出现，
+   * 但已经在复习中的词照常按 FSRS 排期 —— 上限只管「新词发放」，不管旧词。
+   */
+  cefrCap: Cefr | "";
 }
 
 export type QuizType = "en2cn" | "cn2en" | "spell";
@@ -139,6 +211,27 @@ export const MASTERY_COOLDOWN_DAYS = 30;
 /** 目标词量（A1–C1 全部）；进度条与「还要多少天」都以它为分母 */
 export const SPRINT_TARGET = 5323;
 
+/**
+ * 顽固词（leech）阈值：累计忘记这么多次就移出主复习队列。
+ *
+ * 为什么需要：FSRS 本身不会放弃任何一张卡 —— 一张反复忘记的卡会被反复排到
+ * 「明天」，每天都要花 6–8 秒过一遍却始终记不住。实测把 above/stake 这类
+ * 抽象词反复忘 8 次是很常见的，它们会长期占据队列头部的到期位。
+ *
+ * 8 次是权衡：低于 8 会误伤「只是刚开始记」的新词（前几次忘记是正常的），
+ * 高于 8 则一张卡在队列里滞留过久。移出后不是删除 —— 见 LEECH_REVIEW_DAYS。
+ */
+export const LEECH_THRESHOLD = 8;
+
+/**
+ * 顽固词回归主队列的冷却期（天）。
+ *
+ * 移出后并不永久放弃：过 30 天自动回来考一次，考过就恢复正常排期。
+ * 这条与「已掌握」的冷却期同一思路 —— 都是「降频」而不是「毕业」，
+ * 避免因为某个阶段状态差就把一个词永久判死。
+ */
+export const LEECH_COOLDOWN_DAYS = 30;
+
 export const DEFAULT_PREFS: Prefs = {
   pageSize: 20,
   defaultLevel: "A1",
@@ -147,6 +240,8 @@ export const DEFAULT_PREFS: Prefs = {
   retention: 0.9,
   autoLockMinutes: 30,
   quizTypes: ["en2cn", "cn2en", "spell"],
+  includeExtended: false,
+  cefrCap: "",
 };
 
 /** 一次性迁移标记 + 锁屏数据（meta store，§4.3） */
