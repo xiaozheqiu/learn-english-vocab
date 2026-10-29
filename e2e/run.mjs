@@ -40,7 +40,7 @@ if (!(await isUp(BASE))) {
  * pwa-update 需要 dist/（自己起静态服务器、自己造 A/B 夹具），
  * 和 dev server 的两套流程无关，所以放最后单独跑。
  */
-const suites = ["flow.mjs", "edge.mjs", "pwa-update.mjs"];
+const suites = ["flow.mjs", "edge.mjs", "learning.mjs", "pwa-update.mjs"];
 let failed = 0;
 let total = 0;
 

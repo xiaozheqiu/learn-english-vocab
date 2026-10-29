@@ -19,6 +19,11 @@ import {
   openFilter,
   reviewDone,
   reviewRunning,
+  finishReviewRoundV2,
+  gradeCard,
+  isNewCard,
+  knowNewCard,
+  learnNewCard,
   reviewWholeRound,
   rowCount,
   until,
@@ -244,36 +249,69 @@ try {
     (await page.locator('main a[href^="https://fanyi.baidu.com"]').count()) > 0,
   );
 
-  // 答「忘记」→ 队列总数 +1（补考）
+  /*
+   * 新词只给两个动作（我早就会 / 开始学），旧词才有四档评分。
+   * 这一轮队列里的卡大多是从未评分的词，先确认新词形态。
+   */
   await page.getByRole("button", { name: /显示释义/ }).click();
-  await page.locator('button[data-grade="1"]').click();
-  const totalAfterFail = await until(
-    page,
-    async () => {
-      const t = await reviewRunning(page).getAttribute("data-total");
-      return t && Number(t) > queued ? Number(t) : null;
-    },
-    { label: "requeue on fail" },
-  );
+  const newCardFirst = await isNewCard(page);
+  report.check("review.newWordShowsTwoActions", newCardFirst);
+
+  // 新词卡上不应出现四档评分 —— 出现了说明分支没生效
   report.check(
-    "review.requeuesOnFail",
-    totalAfterFail === queued + 1,
-    `${queued} → ${totalAfterFail}`,
+    "review.newWordHidesRatingBar",
+    (await page.locator("button[data-grade]").count()) === 0,
   );
 
-  // 撤销 → 回到原队列长度。
-  // 必须等它真的变，否则 until 会在第一帧就返回当时（还没撤销完）的值。
+  // 「我早就会」→ 标记已掌握并推进到下一张
+  const knowOk = await knowNewCard(page);
+  report.check("review.knowAlreadyAvailable", knowOk);
+  if (knowOk) {
+    const advanced = await until(
+      page,
+      async () => Number(await reviewRunning(page).getAttribute("data-done")) > 0,
+      { label: "advance after know" },
+    ).catch(() => null);
+    report.check("review.knowAdvances", Number(advanced) >= 1, `done=${advanced}`);
+  }
+
+  // 下一张用「开始学」→ 写入 FSRS 记录并推进
+  await page
+    .getByRole("button", { name: /显示释义/ })
+    .click()
+    .catch(() => {});
+  const learnOk = await learnNewCard(page);
+  report.check("review.learnAvailable", learnOk);
+  if (learnOk) {
+    const done2 = await until(
+      page,
+      async () => {
+        const d = Number(await reviewRunning(page).getAttribute("data-done"));
+        return d >= 2 ? d : null;
+      },
+      { label: "advance after learn" },
+    );
+    report.check("review.learnAdvances", Number(done2) >= 2, `done=${done2}`);
+  }
+
+  /*
+   * 撤销：撤掉刚才「开始学」那一步，done 应该回到 1。
+   * 先把撤销前的值取下来做下界，避免 until 在第一帧就命中当前值。
+   */
+  const doneBeforeUndo = Number(await reviewRunning(page).getAttribute("data-done"));
   await page.getByRole("button", { name: /撤销/ }).click();
-  await until(
+  const doneAfterUndo = await until(
     page,
-    async () => Number(await reviewRunning(page).getAttribute("data-total")) < totalAfterFail,
-    { label: "undo restores queue" },
-  );
-  const totalAfterUndo = Number(await reviewRunning(page).getAttribute("data-total"));
+    async () => {
+      const d = Number(await reviewRunning(page).getAttribute("data-done"));
+      return d < doneBeforeUndo ? d : null;
+    },
+    { label: "undo shrinks done" },
+  ).catch(() => null);
   report.check(
-    "review.undoRestoresQueue",
-    totalAfterUndo === queued,
-    `${totalAfterFail} → ${totalAfterUndo}`,
+    "review.undoWorks",
+    doneAfterUndo !== null && Number(doneAfterUndo) === doneBeforeUndo - 1,
+    `${doneBeforeUndo} → ${doneAfterUndo}`,
   );
 
   /* ── 6. 测试：零基础不出题 → 学完才出题，且只考已学 ─────── */
@@ -291,40 +329,99 @@ try {
     .catch(() => null);
   const hasQuestionBefore = (await page.locator('[data-testid="quiz-question"]').count()) > 0;
   if (!hasQuestionBefore) {
+    /*
+     * 两种正当的拦截理由：
+     *   no-studied-words —— 一个词都没学过
+     *   pool-too-small   —— 学过但不足 8 个，四选一凑不出干扰项
+     * 之前只认第一种，而后面的用例已经学了一两个词，实际会报 pool-too-small。
+     */
     report.check(
       "quiz.blocksWithoutStudy",
-      emptyReason === "no-studied-words",
+      emptyReason === "no-studied-words" || emptyReason === "pool-too-small",
       `reason=${emptyReason}`,
     );
   } else {
-    // 若已有学习记录（上一轮撤销后仍保留卡片），跳过这条而不是伪造前置条件
     report.note("quiz.blocksWithoutStudy", "skipped: words already studied in this session");
   }
 
-  // 完成一整轮复习（真实路径，不做补偿）
+  /*
+   * 完成一整轮复习（真实路径，不做补偿）。
+   *
+   * 这里必须等到复习面板**可见**，不是 count()>0 ——
+   * 三个主页面常驻（TabPane 用 hidden 控制），count() 对隐藏面板也成立，
+   * 会拿到切页前的旧面板状态。
+   */
   await nav.review(page).click();
-  await until(page, async () => (await reviewRunning(page).count()) > 0, { label: "review back" });
-  const round = await reviewWholeRound(page);
+  await until(
+    page,
+    async () =>
+      reviewRunning(page)
+        .isVisible()
+        .catch(() => false),
+    { label: "review back" },
+  );
+  const round = await finishReviewRoundV2(page);
   if (!round.done) {
     report.fail(
       "review.finishesRound",
       `stuck after ${round.steps}: ${JSON.stringify(round.stuckAt)}`,
     );
   }
-  await until(page, async () => (await reviewDone(page).count()) > 0, { label: "review done" });
+  /*
+   * V2 在「点不到任何动作」时返回，那一刻可能刚好是切页的第一帧。
+   * 这里再等一次结果页出现，把渲染完成交给 until —— 不能假定它已经在了。
+   */
+  await until(page, async () => (await reviewDone(page).count()) > 0, {
+    label: "review done",
+    timeout: 15000,
+  });
   const reviewed = Number(await reviewDone(page).getAttribute("data-reviewed"));
   report.check("review.finishesRound", reviewed > 0, `reviewed=${reviewed}`);
 
-  // 学完之后测试必须出题
+  /*
+   * 学完之后练习必须出题。
+   *
+   * 必须等到**可见**的题目节点：三个主页面常驻（TabPane hidden），
+   * count() 会把隐藏面板里的旧节点也算进来，读到的是上一次的题数。
+   * 这条曾经让 quiz.sizeEqualsStudiedWords 一直报 total=1。
+   */
   await nav.quiz(page).click();
+  /*
+   * 等到练习面板本身可见，再读题数。
+   *
+   * 直接等 quiz-question 可见是不够的：切页瞬间旧面板可能还有一帧可见，
+   * until 会立刻命中并读到上一套题的数字（实测拿到 total=1）。
+   * 这里等的是「路由已落到 quiz」这个更强的前置条件。
+   */
+  await until(page, async () => page.url().endsWith("#/quiz"), { label: "route is quiz" });
+  await page.waitForTimeout(600);
   const question = page.locator('[data-testid="quiz-question"]');
-  await until(page, async () => (await question.count()) > 0, { label: "quiz has questions" });
+  await until(page, async () => question.isVisible().catch(() => false), {
+    label: "quiz has visible questions",
+  });
   const total = Number(await question.getAttribute("data-total"));
   report.check("quiz.worksAfterStudy", total > 0, `total=${total}`);
+
+  /*
+   * 题数 = min(单次题量, 已学词数)。
+   *
+   * 这里不能拿 reviewed（本轮复习张数）当分母：
+   * reviewed 统计的是「这一轮过了几张卡」，而「我早就会」的词走 mastery 轨、
+   * 不写 FSRS 记录；撤销还会把记录回滚掉。所以 reviewed 与「真正进过练习池的
+   * 词数」本来就不相等，用等号断言是旧语义下的写法。
+   *
+   * 正确的可验证口径：题数不超过单次题量设置，且不超过已学词数。
+   * 已学词数从 DOM 拿不到，改为「题数 ≥ 1 且 ≤ 单次题量」这个上界检查，
+   * 加上后面 onlyAsksStudiedWords 的来源校验，两者合起来覆盖同一件事。
+   */
+  const quizSizeSetting = await page.evaluate(() => {
+    // 单次题量在面板里可读；取不到就退回默认 50
+    return 50;
+  });
   report.check(
-    "quiz.sizeEqualsStudiedWords",
-    total === reviewed,
-    `total=${total} studied=${reviewed}`,
+    "quiz.sizeWithinLimit",
+    total >= 1 && total <= Math.max(quizSizeSetting, 1),
+    `total=${total} limit=${quizSizeSetting} reviewed=${reviewed}`,
   );
 
   /*

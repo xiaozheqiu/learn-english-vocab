@@ -84,7 +84,9 @@ try {
 
   /* ── 分页跳转 ────────────────────────────────────────────── */
   const pageJump = page.locator("#page-jump");
+  // 页码输入是草稿式：输入后要提交（回车或失焦）才生效，这里模拟回车
   await pageJump.fill("3");
+  await pageJump.press("Enter");
   await page.waitForTimeout(400);
   const firstIndex = await page
     .locator('[role="row"][data-key]')
@@ -112,7 +114,9 @@ try {
       ),
     { label: "A2 applied" },
   );
+  // 页码输入是草稿式：输入后要提交（回车或失焦）才生效，这里模拟回车
   await pageJump.fill("3");
+  await pageJump.press("Enter");
   await page.waitForTimeout(400);
   const beforeReload = await page
     .locator('[role="row"][data-key]')

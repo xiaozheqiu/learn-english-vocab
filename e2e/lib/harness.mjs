@@ -176,7 +176,7 @@ export function waitRows(page, expected) {
 export const nav = {
   list: (page) => page.getByRole("button", { name: "词表" }).last(),
   review: (page) => page.getByRole("button", { name: "复习" }).last(),
-  quiz: (page) => page.getByRole("button", { name: "测试" }).last(),
+  quiz: (page) => page.getByRole("button", { name: "练习" }).last(),
   panel: (page) => page.getByRole("button", { name: "打开学习面板" }),
   filter: (page) => page.locator('[data-testid="filter-trigger"]'),
   bulk: (page) => page.locator('[data-testid="bulk-fab"]'),
@@ -201,6 +201,131 @@ export async function completeSetup(page) {
   }
   // 进入主壳的标志是底部导航出现
   await until(page, async () => (await nav.list(page).count()) > 0, { label: "main shell" });
+}
+
+/**
+ * 可见的复习面板。
+ *
+ * 三个主页面是常驻的（TabPane 用 hidden 控制），所以 `page.getByRole` 的
+ * count() 会把隐藏面板里的元素也算进去。复习动作必须限定在可见面板内，
+ * 否则「显示释义」可能点到词表页上某个同名按钮，表现为队列不推进。
+ */
+export function reviewPane(page) {
+  return page.locator(
+    '[data-testid="review-running"]:visible, [data-testid="review-done"]:visible',
+  );
+}
+
+/** 可见面板内的按钮 */
+export function reviewButton(page, name) {
+  return page
+    .locator(
+      'div:not([hidden]) > [data-testid="review-running"], div:not([hidden]) > [data-testid="review-done"]',
+    )
+    .locator("xpath=ancestor::div[1]")
+    .getByRole("button", { name })
+    .last();
+}
+
+/**
+ * 当前这张卡是新词还是旧词。
+ *
+ * 新词只有两个动作（我早就会 / 开始学），旧词才有四档评分 ——
+ * 两种卡的 DOM 完全不同，所有复习相关的用例都必须先分辨，
+ * 否则会卡在找不到 data-grade 上（这正是改版后第一次跑 e2e 的失败点）。
+ */
+export function isNewCard(page) {
+  return page
+    .getByRole("button", { name: /开始学/ })
+    .count()
+    .then((n) => n > 0);
+}
+
+/** 新词：点「开始学」（等价于 grade=3 的首轮排期） */
+export async function learnNewCard(page) {
+  const btn = page.getByRole("button", { name: /开始学/ });
+  if (await btn.count()) {
+    await btn.first().click();
+    return true;
+  }
+  return false;
+}
+
+/** 新词：点「我早就会」（走 mastery 轨，不写 FSRS） */
+export async function knowNewCard(page) {
+  const btn = page.getByRole("button", { name: /我早就会/ });
+  if (await btn.count()) {
+    await btn.first().click();
+    return true;
+  }
+  return false;
+}
+
+/** 旧词：按档位评分 */
+export async function gradeCard(page, grade) {
+  const btn = page.locator(`button[data-grade="${grade}"]`);
+  if (await btn.count()) {
+    await btn.first().click();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 复习一整轮：新词点「开始学」，旧词点「记得」，直到走到结束页。
+ *
+ * 原来的实现只认 `button[data-grade="3"]`，新词没有四档评分时会卡到超时。
+ * 现在先分辨卡型再动作 —— 这本身就是真实用户的路径，不是补偿逻辑。
+ */
+export async function finishReviewRoundV2(page, { maxSteps = 1200 } = {}) {
+  let steps = 0;
+  for (let i = 0; i < maxSteps; i += 1) {
+    // 先看是否已经到结果页
+    if (
+      await reviewDone(page)
+        .isVisible()
+        .catch(() => false)
+    ) {
+      return { done: true, steps, stuckAt: null };
+    }
+    const running = page.locator('[data-testid="review-running"]');
+    if (!(await running.isVisible().catch(() => false))) {
+      return { done: true, steps, stuckAt: null };
+    }
+    const reveal = running.getByRole("button", { name: /显示释义/ });
+    if (await reveal.count()) {
+      await reveal.first().click();
+      await page.waitForTimeout(40);
+      continue;
+    }
+    const learn = running.getByRole("button", { name: /开始学/ });
+    if (await learn.count()) {
+      await learn.first().click();
+      steps += 1;
+      await page.waitForTimeout(60);
+      continue;
+    }
+    const grade = running.locator('button[data-grade="3"]');
+    if (await grade.count()) {
+      await grade.first().click();
+      steps += 1;
+      await page.waitForTimeout(60);
+      continue;
+    }
+    // 两个动作都点不到 = 结束页或空态
+    return { done: true, steps, stuckAt: null };
+  }
+  const stuckAt = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="review-running"]');
+    return el
+      ? {
+          done: el.getAttribute("data-done"),
+          total: el.getAttribute("data-total"),
+          text: (el.textContent || "").slice(0, 120),
+        }
+      : null;
+  });
+  return { done: false, steps, stuckAt };
 }
 
 /** 复习一整轮：每题点「显示释义」再点「记得」。返回是否走到结束页 */

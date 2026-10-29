@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node e2e/run.mjs",
-    "test:pwa": "node e2e/pwa-update.mjs"
+    "test:pwa": "node e2e/pwa-update.mjs",
+    "test:e2e:learning": "node e2e/learning.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.12",
