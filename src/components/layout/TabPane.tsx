@@ -10,12 +10,12 @@ export interface TabPaneProps {
 /**
  * 常驻页面容器（§2.1 修订）。
  *
- * 为什么不再按路由卸载：切到「测试」再切回来会重新抽一套题、复习进度归零、
- * 词表的筛选和页码也一起丢掉 —— 用户会觉得自己被踢回了首页。
- * 所以三个主页面第一次进入后一直挂着，只用 hidden 控制显隐；
+ * 为什么不再按路由卸载：切到词性对照再切回来，词表的筛选、页码与搜索词会一起丢掉
+ * —— 用户会觉得自己被踢回了首页。
+ * 所以主页面第一次进入后一直挂着，只用 hidden 控制显隐；
  * 每个面板自己是一个滚动容器，滚动位置天然按页保留，不需要记 window.scrollY。
  *
- * 懒挂载：没进过的页面不渲染，避免一进 App 就白抽一套题、白建一队复习卡。
+ * 懒挂载：没进过的页面不渲染，词性对照要等真正点进去才解析 Markdown。
  */
 export function TabPane({ active, children }: TabPaneProps) {
   const [mounted, setMounted] = useState(active);
@@ -54,7 +54,7 @@ export function TabPane({ active, children }: TabPaneProps) {
       <div
         ref={ref}
         hidden={!visible}
-        className="h-full overflow-y-auto overscroll-contain pb-[calc(72px+env(safe-area-inset-bottom))] lg:pb-8"
+        className="h-full overflow-y-auto overscroll-contain pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
       >
         {mounted ? children : null}
       </div>

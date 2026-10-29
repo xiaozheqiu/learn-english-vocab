@@ -19,7 +19,7 @@ import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { chromium } from "playwright";
-import { createReport, completeSetup, VIEWPORTS } from "./lib/harness.mjs";
+import { createReport, waitMainShell, VIEWPORTS } from "./lib/harness.mjs";
 
 const BASE_PATH = "/learn-english-vocab/";
 const PORT = Number(process.env.PWA_PORT ?? 4178);
@@ -132,12 +132,12 @@ try {
   report.note("titleA", titleA);
 
   /*
-   * 先走完首次设置进主壳。
-   * 更新提示只挂在主壳上（锁屏/向导期间不弹，免得抢 PIN 键盘焦点），
-   * 停在向导页时弹框本来就不该出现 —— 不初始化就测这条链路，测的是假象。
+   * 先等主壳就绪（词表网格渲染出来）。
+   * 更新提示只挂在主壳上：还没进入应用就弹框属于假象，
+   * 所以这条链路必须在真实页面上验证。
    */
-  await completeSetup(page);
-  report.check("app.inMainShell", (await page.locator("nav").count()) > 0);
+  await waitMainShell(page);
+  report.check("app.inMainShell", (await page.locator('[data-testid="word-grid"]').count()) > 0);
 
   // 弹框不该在没有任何新版本时冒出来
   const dialogBefore = await page.locator('[role="dialog"]').count();

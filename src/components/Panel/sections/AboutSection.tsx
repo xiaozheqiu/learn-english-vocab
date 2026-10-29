@@ -1,4 +1,4 @@
-import { BookOpen, Database, Info, ShieldQuestion } from "lucide-react";
+import { BookOpen, Database, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -31,7 +31,7 @@ export interface AboutSectionProps {
 
 /**
  * 关于分区（§2.3 / §4.1 / §11）：
- * 词性对照表入口、数据来源、版本，并把 PIN 的真实定位写清楚。
+ * 词性对照表入口、数据来源、版本。
  */
 export function AboutSection({ onOpenGuide }: AboutSectionProps) {
   return (
@@ -60,22 +60,8 @@ export function AboutSection({ onOpenGuide }: AboutSectionProps) {
         <ul className="mt-1 space-y-1 text-[12px] leading-5 text-ink-soft">
           <li className="tnum">Oxford 5000 词表，共 5323 条，覆盖 A1–C1 五个等级</li>
           <li>词性与中文释义取自词表原数据，未做改写</li>
-          <li>进度、偏好与 PIN 哈希全部保存在本机浏览器，不上传、无服务端</li>
+          <li>已掌握标记与偏好全部保存在本机浏览器，不上传、无服务端</li>
         </ul>
-      </section>
-
-      <section aria-labelledby="about-lock-title" className="border-t border-line pt-3">
-        <h3
-          id="about-lock-title"
-          className="flex items-center gap-1.5 text-[13px] font-medium text-ink"
-        >
-          <ShieldQuestion className="h-3.5 w-3.5 text-ink-mute" aria-hidden="true" />
-          关于 PIN
-        </h3>
-        <p className="mt-1 text-[12px] leading-5 text-ink-soft">
-          PIN 是本地隐私屏，学习数据未加密；重置不会删除数据。它只挡住随手拿起你设备的人，
-          并不是真正的访问控制——数据就在浏览器里，打开开发者工具即可看到。
-        </p>
       </section>
 
       <section aria-labelledby="about-version-title" className="border-t border-line pt-3">
@@ -95,7 +81,7 @@ export function AboutSection({ onOpenGuide }: AboutSectionProps) {
           构建 {BUILD_FINGERPRINT} · 更新后这里会变，可据此确认拿到的是哪一版
         </p>
         <p className="mt-1 text-[12px] leading-5 text-ink-soft">
-          React + TypeScript · FSRS-5 排期 · 纯前端离线可用
+          React + TypeScript · 纯前端离线可用
         </p>
       </section>
     </div>

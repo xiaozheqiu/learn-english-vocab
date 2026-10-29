@@ -61,7 +61,8 @@ export default defineConfig(({ command }) => {
         manifest: {
           name: "背单词 · Oxford 5000",
           short_name: "背单词",
-          description: "Oxford 3000 / 5000 分级词汇（A1–C1，5323 条），FSRS 间隔复习，离线可用。",
+          description:
+            "Oxford 3000 / 5000 分级词汇表（A1–C1，5323 条），筛选、搜索与已掌握标记，离线可用。",
           lang: "zh-CN",
           start_url: ".",
           scope: ".",

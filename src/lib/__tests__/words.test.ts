@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  acceptedSpellings,
-  buildKeys,
-  normalizeSpelling,
-  posTags,
-  primaryMeaning,
-  samePos,
-} from "../words";
+import { buildKeys } from "../words";
 import type { RawRow } from "../types";
 
 describe("词条主键", () => {
@@ -37,85 +30,12 @@ describe("词条主键", () => {
     expect(row.seq).toBe("7");
     expect(row.scope).toBe("5000");
   });
-});
 
-describe("拼写判定", () => {
-  it("并列写法都可接受", () => {
-    expect(acceptedSpellings("a, an")).toContain("a");
-    expect(acceptedSpellings("a, an")).toContain("an");
-  });
-
-  it("去括注", () => {
-    const list = acceptedSpellings("colour (color)");
-    expect(list).toContain("colour");
-    expect(list).not.toContain("colour (color)");
-  });
-
-  it("归一化忽略大小写与尾随标点", () => {
-    expect(normalizeSpelling("  Abandon. ")).toBe("abandon");
-    expect(normalizeSpelling("A,")).toBe("a");
-    expect(normalizeSpelling("don't")).toBe("dont");
-  });
-});
-
-describe("释义与词性", () => {
-  it("primaryMeaning 取首个义项", () => {
-    expect(primaryMeaning("prep. 在...周围，大约 ／ adv. 大约")).toContain("prep.");
-    expect(primaryMeaning("放弃")).toBe("放弃");
-  });
-
-  it("posTags 拆多词性", () => {
-    expect(posTags("n., v.")).toEqual(["n.", "v."]);
-    expect(posTags("prep., adv.")).toEqual(["prep.", "adv."]);
-  });
-
-  it("samePos 有交集即同词性", () => {
-    const a = {
-      key: "a",
-      level: "A1",
-      word: "x",
-      pos: "n., v.",
-      cn: "",
-      scope: "",
-      seq: "",
-      rank: 0,
-      tier: "core",
-      cefr: "",
-      senseCefr: [],
-      ox3000: false,
-      ox5000: false,
-    } as const;
-    const b = {
-      key: "b",
-      level: "A1",
-      word: "y",
-      pos: "v.",
-      cn: "",
-      scope: "",
-      seq: "",
-      rank: 0,
-      tier: "core",
-      cefr: "",
-      senseCefr: [],
-      ox3000: false,
-      ox5000: false,
-    } as const;
-    const c = {
-      key: "c",
-      level: "A1",
-      word: "z",
-      pos: "adj.",
-      cn: "",
-      scope: "",
-      seq: "",
-      rank: 0,
-      tier: "core",
-      cefr: "",
-      senseCefr: [],
-      ox3000: false,
-      ox5000: false,
-    } as const;
-    expect(samePos(a, b)).toBe(true);
-    expect(samePos(a, c)).toBe(false);
+  it("字段缺省不抛错，等级与释义原样保留", () => {
+    const row = buildKeys("A2", [["only-word", "", "", ""]])[0]!;
+    expect(row.word).toBe("only-word");
+    expect(row.pos).toBe("");
+    expect(row.cn).toBe("");
+    expect(row.level).toBe("A2");
   });
 });

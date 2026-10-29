@@ -1,15 +1,15 @@
 import { memo } from "react";
 import { Check, Plus } from "lucide-react";
-import { StatusLabel } from "./StatusRail";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { isMobile, transUrl } from "@/lib/trans";
-import type { StatusInfo, Word } from "@/lib/types";
+import type { Word } from "@/lib/types";
 
 export interface WordRowProps {
   word: Word;
   index: number;
-  status: StatusInfo;
+  /** 是否已标记掌握（唯一的状态维度） */
+  mastered: boolean;
   checked: boolean;
   /** 父组件传稳定引用；行内只补自己的 key */
   onToggleSelect: (key: string, shiftKey?: boolean) => void;
@@ -17,40 +17,27 @@ export interface WordRowProps {
 }
 
 /**
- * 词表行。
- *
- * 两个动作必须一眼分得开（旧版把「已掌握」同时写成状态文字和按钮，看起来像两颗按钮）：
- * - 左侧勾选框 = 选中行，只服务于右下角的批量操作；
- * - 右侧药丸 = 是否已掌握，点一下切换，已掌握时只保留这一颗按下态按钮，
- *   不再额外印一行「已掌握」文字（左栏 4px 深绿竖条已经在表达同一件事）。
- *
- * 布局：勾选框 / 序号 / 单词 + 释义 / 排期标签 + 掌握药丸。
- * 移动端释义换到第二行，右侧动作贴右上；桌面端单行四列。
- */
-/**
  * 一行词表。
  *
- * `memo` 是必需的：一页 500 行时，勾选任意一行都会让父组件重渲染，
- * 不做 memo 就要重建 500 个行组件（实测单次点击 156~241ms）。
+ * 两个动作必须一眼分得开：
+ * - 左侧勾选框 = 选中行，只服务于右下角的批量操作；
+ * - 右侧药丸 = 是否已掌握，点一下切换，已掌握时只保留这一颗按下态按钮。
  *
- * 默认的浅比较在这里不够用：`status` 是 statusOf 每次新造的对象，
- * 引用永远不同，导致 500 行仍然全部重渲染。所以按字段比较。
+ * 布局：勾选框 / 序号 / 单词 + 释义 / 掌握药丸。
+ * 移动端释义换到第二行，右侧动作贴右上；桌面端单行四列。
+ *
+ * `memo` 是必需的：一页 200 行时，勾选任意一行都会让父组件重渲染，
+ * 不做 memo 就要重建 200 个行组件。
  */
-function sameStatus(a: StatusInfo, b: StatusInfo): boolean {
-  return a.kind === b.kind && a.label === b.label && a.rail === b.rail;
-}
-
 export const WordRow = memo(
   function WordRow({
     word,
     index,
-    status,
+    mastered,
     checked,
     onToggleSelect,
     onToggleMastery,
   }: WordRowProps) {
-    const mastered = status.kind === "mastered";
-
     return (
       <div
         role="row"
@@ -72,7 +59,7 @@ export const WordRow = memo(
           "hover:bg-brand-wash/40",
           // 选中 = 浅绿底；已掌握 = 文字变淡 + 左栏，不再抢同一块底色
           checked ? "bg-brand-wash/70" : mastered && "bg-paper/60",
-          status.rail,
+          mastered ? "rail-mastered" : "",
         )}
       >
         {/* 44×44 热区：容器撑到 44 高，勾选框本体仍是 18×18 */}
@@ -121,9 +108,8 @@ export const WordRow = memo(
           </span>
         </span>
 
-        {/* 右侧：排期标签（只在有排期时出现）+ 掌握药丸。单行，不再上下堆两颗按钮 */}
-        <span className="flex shrink-0 items-center gap-2 pt-[3px] lg:pt-0">
-          {!mastered && <StatusLabel status={status} />}
+        {/* 右侧：掌握药丸（唯一的状态控件） */}
+        <span className="flex shrink-0 items-center pt-[3px] lg:pt-0">
           <button
             type="button"
             onClick={(event) => {
@@ -154,8 +140,8 @@ export const WordRow = memo(
   (prev, next) =>
     prev.word === next.word &&
     prev.index === next.index &&
+    prev.mastered === next.mastered &&
     prev.checked === next.checked &&
     prev.onToggleSelect === next.onToggleSelect &&
-    prev.onToggleMastery === next.onToggleMastery &&
-    sameStatus(prev.status, next.status),
+    prev.onToggleMastery === next.onToggleMastery,
 );

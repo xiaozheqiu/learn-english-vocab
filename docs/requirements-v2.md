@@ -1,5 +1,9 @@
 # 背单词 App v2 · 最终方案
 
+> **历史存档（v3.0.0 起失效）**：本文描述的 PIN 锁屏、FSRS 间隔复习、测试抽题、
+> 学习节奏设置已在 v3.0.0 全部移除，应用收回为纯词表。设计语言（§1）与词表交互（§2.1）
+> 仍然有效；其余章节只作为决策记录保留，实现以 `README.md` 与源码为准。
+
 状态：**已定稿，可开工**
 范围：`learn-english-vocab` 从「词表页」重构为移动优先的学习 App（PWA）
 技术底座（已定）：TypeScript（strict）+ Tailwind CSS + shadcn/ui + IndexedDB + `ts-fsrs`

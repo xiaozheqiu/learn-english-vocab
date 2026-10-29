@@ -1,16 +1,21 @@
 /**
  * 边界与持久化回归（结构断言版）。
  *
- * 覆盖：深链、搜索、分页、数据面板、题型开关、锁屏、词性对照。
+ * 覆盖：视图（筛选 + 页码）跨刷新保留、每页条数只在筛选抽屉里改、
+ * 数据面板的导出下载与清空二次确认、常驻面板的滚动位置、
+ * 词性对照的深链与返回、桌面宽度下的布局。
  * 规则同 flow.mjs：不绕过被测行为，不按文案断言。
  *
  * 运行：node e2e/edge.mjs [BASE_URL]
  */
 
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   BASE,
+  VIEWPORTS,
   closePage,
-  completeSetup,
   createReport,
   launch,
   nav,
@@ -19,6 +24,7 @@ import {
   rowCount,
   until,
   waitDialogClosed,
+  waitMainShell,
   waitRows,
 } from "./lib/harness.mjs";
 
@@ -28,17 +34,10 @@ const browser = await launch();
 try {
   const page = await newPage(browser);
 
-  /* ── 深链：直接落到 review ───────────────────────────────── */
-  await page.goto(`${BASE}#/review`, { waitUntil: "networkidle" });
-  await page.waitForTimeout(300);
-  await completeSetup(page);
-  await page.waitForTimeout(600);
-  // 首次设置完成后应回到词表（守卫会改写 lock/setup 路由）
-  report.check("route.setupLandsOnList", (await page.evaluate(() => location.hash)) === "#/");
-
-  /* ── 未知 hash 会被纠正 ──────────────────────────────────── */
+  /* ── 深链：未知 hash 收敛到词表 ──────────────────────────── */
   await page.goto(`${BASE}#/nonsense`, { waitUntil: "networkidle" });
-  await page.waitForTimeout(800);
+  await waitMainShell(page);
+  await page.waitForTimeout(400);
   report.check(
     "route.unknownHashCanonicalised",
     (await page.evaluate(() => location.hash)) === "#/",
@@ -47,59 +46,14 @@ try {
   await waitRows(page, 20);
   report.check("route.unknownHashShowsList", (await rowCount(page)) > 0);
 
-  /* ── 深链刷新到 quiz 仍渲染 ─────────────────────────────── */
-  await page.goto(`${BASE}#/quiz`, { waitUntil: "networkidle" });
-  await page.waitForTimeout(900);
-  report.check("route.quizDeepLinkKept", (await page.evaluate(() => location.hash)) === "#/quiz");
-  const quizPaneReady = await page
-    .locator('[data-testid="quiz-empty"], [data-testid="quiz-question"]')
-    .count();
-  report.check("route.quizDeepLinkRenders", quizPaneReady > 0);
-
-  await nav.list(page).click();
+  /* ── 深链刷新到词性对照仍渲染，返回后主界面还在 ──────────── */
+  await page.goto(`${BASE}#/guide`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(600);
+  report.check("route.guideDeepLinkKept", (await page.evaluate(() => location.hash)) === "#/guide");
+  report.check("route.guideDeepLinkRenders", (await page.locator("main").innerText()).length > 50);
+  await page.goto(`${BASE}#/`, { waitUntil: "networkidle" });
   await waitRows(page, 20);
-
-  /* ── 搜索：跨全部等级、不服从等级筛选 ───────────────────── */
-  const search = page.locator("#word-search");
-  // 快捷键只在「焦点不在输入框」时生效：先点到空白处再按 /
-  await page.locator("main").click({ position: { x: 4, y: 240 } });
-  await page.waitForTimeout(120);
-  await page.keyboard.press("/");
-  await until(
-    page,
-    async () => (await page.evaluate(() => document.activeElement?.id)) === "word-search",
-    { label: "slash focuses search", timeout: 3000 },
-  ).catch(() => null);
-  report.check(
-    "search.slashFocusesInput",
-    (await page.evaluate(() => document.activeElement?.id)) === "word-search",
-  );
-  // abandon 是 B2 词，默认筛选 A1：必须仍能搜到
-  await search.fill("abandon");
-  await until(page, async () => (await rowCount(page)) === 1, { label: "search hit" });
-  const hit = await page.locator('[role="row"][data-key] a').first().innerText();
-  report.check("search.crossesLevels", hit.toLowerCase().includes("abandon"), hit);
-  await search.fill("");
-  await waitRows(page, 20);
-
-  /* ── 分页跳转 ────────────────────────────────────────────── */
-  const pageJump = page.locator("#page-jump");
-  // 页码输入是草稿式：输入后要提交（回车或失焦）才生效，这里模拟回车
-  await pageJump.fill("3");
-  await pageJump.press("Enter");
-  await page.waitForTimeout(400);
-  const firstIndex = await page
-    .locator('[role="row"][data-key]')
-    .first()
-    .locator("[data-row-index]")
-    .getAttribute("data-row-index");
-  report.check("pager.jumpsToPage", Number(firstIndex) === 41, `first=${firstIndex}`);
-
-  /* ── 每页条数只在筛选抽屉里改 ────────────────────────────── */
-  report.check(
-    "pager.hasNoPageSizeControl",
-    (await page.locator('nav[aria-label="分页"] select').count()) === 0,
-  );
+  report.check("route.guideBackToList", (await rowCount(page)) > 0);
 
   /* ── 筛选条件与页码跨刷新保留 ─────────────────────────────── */
   await openFilter(page);
@@ -114,7 +68,8 @@ try {
       ),
     { label: "A2 applied" },
   );
-  // 页码输入是草稿式：输入后要提交（回车或失焦）才生效，这里模拟回车
+  const pageJump = page.locator("#page-jump");
+  // 页码输入是草稿式：输入后要提交（回车或失焦）才生效
   await pageJump.fill("3");
   await pageJump.press("Enter");
   await page.waitForTimeout(400);
@@ -134,101 +89,161 @@ try {
     "view.persistsFilterLabel",
     (await page.locator('[data-testid="filter-trigger"]').innerText()).includes("A2"),
   );
-  // 复原，避免影响后续用例（后续用例假定默认 A1 · 第 1 页）
+
+  /* ── 每页条数只在筛选抽屉里改，分页器不重复放一份 ─────────── */
+  report.check(
+    "pager.hasNoPageSizeControl",
+    (await page.locator('nav[aria-label="分页"] select').count()) === 0,
+  );
   await openFilter(page);
-  await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  await nav.dialog(page).locator('[data-testid="filter-size"]').getByRole("button").nth(1).click(); // 50
   await nav.dialog(page).locator('[data-testid="filter-done"]').click();
   await waitDialogClosed(page);
-  await pageJump.fill("1");
+  await waitRows(page, 50);
+  report.check("pager.sizeFromFilterSheet", (await rowCount(page)) === 50);
+  // 复原：50 → 20，等级 → 全部
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  await nav.dialog(page).locator('[data-testid="filter-size"]').getByRole("button").nth(0).click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
   await waitRows(page, 20);
+  await pageJump.fill("1");
+  await pageJump.press("Enter");
+  await page.waitForTimeout(300);
 
-  /* ── 数据面板：导出 / 导入 / 清空三个入口 ────────────────── */
+  /* ── 常驻面板：滚一段，走应用内路径去词性对照再回来，位置还在 ── */
+  await page.locator('[role="row"][data-key]').nth(12).scrollIntoViewIfNeeded();
+  await page.waitForTimeout(200);
+  const paneScroll = () =>
+    page.evaluate(() => {
+      const pane = document.querySelector("main > div:not([hidden])");
+      return pane ? Math.round(pane.scrollTop) : -1;
+    });
+  const scrollBefore = await paneScroll();
+  // 应用内路径（不刷新页面）：面板 → 关于 → 打开词性对照表
+  await nav.panel(page).click();
+  await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel 0" });
+  await page.getByRole("tab").filter({ hasText: /关于/ }).click();
+  await page.getByRole("button", { name: /打开词性对照表/ }).click();
+  await waitDialogClosed(page);
+  await until(page, async () => (await page.evaluate(() => location.hash)) === "#/guide", {
+    label: "guide route",
+  });
+  await page.getByRole("button", { name: /返回词表/ }).click();
+  await until(page, async () => (await page.evaluate(() => location.hash)) === "#/", {
+    label: "back to list",
+  });
+  /*
+   * 滚动位置是面板可见后的一个 effect 里恢复的，和路由变化不在同一帧。
+   * 所以等它自己落位，而不是切完立刻读一次（那样几乎必然读到 0）。
+   */
+  const scrollAfter = await until(
+    page,
+    async () => {
+      const top = await paneScroll();
+      return top > 0 ? top : 0;
+    },
+    { label: "scroll restored", timeout: 4000 },
+  ).catch(() => 0);
+  report.check(
+    "pane.keepsScrollOnTabSwitch",
+    scrollBefore > 0 && Math.abs(scrollAfter - scrollBefore) <= 4,
+    `${scrollBefore} → ${scrollAfter}`,
+  );
+
+  /* ── 数据面板：导出的 JSON 只带 mastery / prefs ─────────────── */
+  // 先标一个词，导出的文件里必须看得到它（不靠「导出成功」这种自我声明）
+  const firstRow = page.locator('[role="row"][data-key]').first();
+  const firstKey = await firstRow.getAttribute("data-key");
+  const rowMasteryBtn = firstRow
+    .locator("button")
+    .filter({ hasNot: page.locator('[role="checkbox"]') })
+    .last();
+  await rowMasteryBtn.click();
+  await until(page, async () => (await rowMasteryBtn.getAttribute("aria-pressed")) === "true", {
+    label: "mastery set for export",
+  });
+
   await nav.panel(page).click();
   await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel" });
   await page.getByRole("tab").filter({ hasText: /数据/ }).click();
-  const dataPane = await page.locator('[role="dialog"]').innerText();
-  report.check("data.hasExport", /导出/.test(dataPane));
-  report.check("data.hasImport", /导入/.test(dataPane));
-  report.check("data.hasWipe", /清空/.test(dataPane));
 
-  // 清空需要二次确认：点开确认区，再取消（不真的清）
+  const downloadDir = await mkdtemp(join(tmpdir(), "ox5000-download-"));
+  const downloadPromise = page.waitForEvent("download", { timeout: 15000 });
+  await page.getByRole("button", { name: /导出 JSON/ }).click();
+  const download = await downloadPromise;
+  const file = join(downloadDir, download.suggestedFilename());
+  await download.saveAs(file);
+  const payload = JSON.parse(await readFile(file, "utf8"));
+  report.check(
+    "data.exportCarriesMarkedWord",
+    Array.isArray(payload.mastery) && payload.mastery.includes(firstKey),
+    `${download.suggestedFilename()} mastery=${payload.mastery?.length}`,
+  );
+  report.check("data.exportOmitsRemovedStores", !("srs" in payload) && !("days" in payload));
+
+  // 清空：先点开确认区，再取消（不真的清）
   await page.getByRole("button", { name: /清空进度/ }).click();
   await until(
     page,
     async () =>
       (await page
         .locator('[role="dialog"] button')
-        .filter({ hasText: /确认|真的/ })
+        .filter({ hasText: /确认清空/ })
         .count()) > 0,
     { label: "wipe confirm" },
   );
   report.check("data.wipeNeedsConfirm", true);
+  await page.getByRole("button", { name: /取消/ }).click();
+  await page.waitForTimeout(150);
+  report.check(
+    "data.wipeCancelRestores",
+    (await page
+      .locator('[role="dialog"] button')
+      .filter({ hasText: /确认清空/ })
+      .count()) === 0,
+  );
   await page.keyboard.press("Escape");
   await waitDialogClosed(page);
 
-  /* ── 题型开关：至少保留一种 ──────────────────────────────── */
-  await nav.panel(page).click();
-  await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel 2" });
-  await page.getByRole("tab").filter({ hasText: /学习/ }).click();
-  const typeGroup = page.locator('[data-testid="quiz-type-group"]');
-  report.check("panel.quizTypeGroupExists", (await typeGroup.count()) === 1);
-  const typeButtons = typeGroup.getByRole("button");
-  const typeCount = await typeButtons.count();
-  report.check("panel.quizTypeHasThree", typeCount === 3, `n=${typeCount}`);
-  // 关掉前两个，第三个应当变成不可再关
-  if (typeCount === 3) {
-    await typeButtons.nth(0).click();
-    await page.waitForTimeout(150);
-    await typeButtons.nth(1).click();
-    await page.waitForTimeout(150);
-    const pressedLeft = await typeGroup.locator('button[aria-pressed="true"]').count();
-    report.check("panel.quizTypeKeepsOne", pressedLeft === 1, `left=${pressedLeft}`);
-    const disabled = await typeButtons.nth(2).isDisabled();
-    report.check("panel.lastQuizTypeLocked", disabled);
-    // 恢复，避免影响后续用例
-    await typeButtons.nth(0).click();
-    await typeButtons.nth(1).click();
-    await page.waitForTimeout(150);
-  }
-  await page.keyboard.press("Escape");
-  await waitDialogClosed(page);
-
-  /* ── 学习面板不再有新词配额 ──────────────────────────────── */
-  await nav.panel(page).click();
-  await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel 3" });
-  await page.getByRole("tab").filter({ hasText: /学习/ }).click();
-  report.check("panel.noNewWordsQuota", (await page.locator("#pref-new-per-day").count()) === 0);
-  await page.keyboard.press("Escape");
-  await waitDialogClosed(page);
-
-  /* ── 锁屏：立即锁定 → 未解锁时看不到主界面 ───────────────── */
-  await nav.panel(page).click();
-  await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel 4" });
-  await page.getByRole("tab").filter({ hasText: /设置/ }).click();
-  // 这个会话没设过 PIN，所以没有「立即锁定」；有则点
-  const lockNow = page.getByRole("button", { name: /立即锁定/ });
-  if ((await lockNow.count()) > 0) {
-    await lockNow.click();
-    await until(page, async () => (await page.locator('[aria-label="数字键盘"]').count()) > 0, {
-      label: "lockscreen",
-    });
-    report.check("lock.hidesMainShell", (await nav.list(page).count()) === 0);
-  } else {
-    report.note("lock.hidesMainShell", "skipped: 本会话未启用锁屏（未设 PIN）");
-  }
-
-  /* ── 词性对照：独立路由，返回后主界面仍在 ────────────────── */
-  await page.goto(`${BASE}#/guide`, { waitUntil: "networkidle" });
-  await page.waitForTimeout(800);
-  report.check("guide.route", (await page.evaluate(() => location.hash)) === "#/guide");
-  const guideMain = await page.locator("main").innerText();
-  report.check("guide.renders", guideMain.length > 50, `${guideMain.length} chars`);
-  await page.goto(`${BASE}#/`, { waitUntil: "networkidle" });
+  /* ── 已掌握标记跨刷新保留（写进 IndexedDB，不是内存）──────── */
+  await page.reload({ waitUntil: "networkidle" });
   await waitRows(page, 20);
-  report.check("guide.backToList", (await rowCount(page)) > 0);
+  const persistedBtn = page
+    .locator(`[role="row"][data-key="${firstKey}"]`)
+    .locator("button")
+    .filter({ hasNot: page.locator('[role="checkbox"]') })
+    .last();
+  report.check(
+    "mastery.persistsAcrossReload",
+    (await persistedBtn.getAttribute("aria-pressed")) === "true",
+    firstKey,
+  );
+  // 复原，避免污染下次运行
+  await persistedBtn.click();
+  await until(page, async () => (await persistedBtn.getAttribute("aria-pressed")) === "false", {
+    label: "mastery cleared",
+  });
 
   report.errors.push(...page.__errors);
   await closePage(page);
+
+  /* ── 桌面宽度：两栏布局不变形，tablist 只有词表 / 词性对照 ── */
+  const wide = await newPage(browser, VIEWPORTS.wide);
+  await wide.goto(BASE, { waitUntil: "networkidle" });
+  await waitRows(wide, 20);
+  const tabs = wide.locator('[role="tablist"] [role="tab"]');
+  report.check("desktop.twoTabs", (await tabs.count()) === 2);
+  const searchVisible = await wide.locator("#word-search").isVisible();
+  report.check("desktop.searchAlwaysVisible", searchVisible);
+  // 桌面端顶栏也放词性对照入口
+  report.check(
+    "desktop.topbarGuideShortcut",
+    (await wide.getByRole("button", { name: "词性对照表" }).count()) > 0,
+  );
+  report.errors.push(...wide.__errors);
+  await closePage(wide);
 } catch (error) {
   report.errors.push(`edge crashed: ${error.message}`);
 } finally {

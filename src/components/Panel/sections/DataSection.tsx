@@ -19,14 +19,12 @@ interface PendingImport {
   fileName: string;
   payload: unknown;
   mastery: number;
-  srs: number;
-  days: number;
 }
 
 /**
  * 数据分区（§2.3 / §5 F4）：
- * 导出 JSON、覆盖式导入（二次确认）、清空进度（二次确认，保留偏好与锁屏）、安装到桌面。
- * 导入与清空都会 store.refresh()，让浮窗外面的词表 / 复习立刻看到新数据。
+ * 导出 JSON、覆盖式导入（二次确认）、清空进度（二次确认，保留偏好）、安装到桌面。
+ * 导入与清空都会 store.refresh()，让浮窗外面的词表立刻看到新数据。
  */
 export function DataSection({
   store,
@@ -45,7 +43,7 @@ export function DataSection({
     setNotice(null);
     try {
       const payload = await store.exportData();
-      const fileName = `ox5000-progress-${dayKey(new Date())}.json`;
+      const fileName = `ox5000-mastered-${dayKey(new Date())}.json`;
       download(fileName, JSON.stringify(payload, null, 2));
       setNotice({ tone: "ok", text: `已导出 ${fileName}` });
     } catch (error) {
@@ -66,8 +64,6 @@ export function DataSection({
         fileName: file.name,
         payload: parsed,
         mastery: parsed.mastery.length,
-        srs: parsed.srs.length,
-        days: parsed.days.length,
       });
     } catch (error) {
       setPending(null);
@@ -83,10 +79,7 @@ export function DataSection({
     try {
       await store.importData(pending.payload);
       await store.refresh();
-      setNotice({
-        tone: "ok",
-        text: `已导入 ${pending.mastery} 条已掌握 / ${pending.srs} 张卡片 / ${pending.days} 天记录`,
-      });
+      setNotice({ tone: "ok", text: `已导入 ${pending.mastery} 条已掌握` });
       setPending(null);
     } catch (error) {
       setNotice({ tone: "error", text: `导入失败：${message(error)}` });
@@ -101,7 +94,7 @@ export function DataSection({
       await store.wipeProgress();
       await store.refresh();
       setConfirmWipe(false);
-      setNotice({ tone: "ok", text: "学习进度已清空，偏好与锁屏设置保留" });
+      setNotice({ tone: "ok", text: "已掌握标记已清空，偏好保留" });
     } catch (error) {
       setNotice({ tone: "error", text: `清空失败：${message(error)}` });
     } finally {
@@ -139,7 +132,7 @@ export function DataSection({
           导出备份
         </h3>
         <p className="mt-0.5 text-[12px] leading-5 text-ink-soft">
-          下载一个 JSON：已掌握标记、FSRS 卡片、每日记录与偏好。换设备或清缓存前先留一份。
+          下载一个 JSON：已掌握的单词与显示偏好。换设备或清缓存前先留一份。
         </p>
         <Button
           variant="outline"
@@ -192,9 +185,7 @@ export function DataSection({
               <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               将用「{pending.fileName}」覆盖当前进度
             </p>
-            <p className="mt-1 text-[12px] leading-5 text-due tnum">
-              已掌握 {pending.mastery} 条 · 卡片 {pending.srs} 张 · 每日记录 {pending.days} 天
-            </p>
+            <p className="mt-1 text-[12px] leading-5 text-due tnum">已掌握 {pending.mastery} 条</p>
             <div className="mt-2 flex gap-1.5">
               <Button
                 size="touch"
@@ -225,9 +216,7 @@ export function DataSection({
           <h3 id="data-install-title" className="text-[13px] font-medium text-ink">
             安装到桌面
           </h3>
-          <p className="mt-0.5 text-[12px] leading-5 text-ink-soft">
-            装成独立应用，断网也能背单词。
-          </p>
+          <p className="mt-0.5 text-[12px] leading-5 text-ink-soft">装成独立应用，断网也能查词。</p>
           <Button size="touch" className="mt-1.5 w-full" onClick={onInstall}>
             <MonitorDown className="h-4 w-4" aria-hidden="true" />
             安装应用
@@ -238,11 +227,10 @@ export function DataSection({
       {/* 清空进度 */}
       <section aria-labelledby="data-clear-title" className="border-t border-line pt-3">
         <h3 id="data-clear-title" className="text-[13px] font-medium text-ink">
-          清空学习进度
+          清空掌握标记
         </h3>
         <p className="mt-0.5 text-[12px] leading-5 text-ink-soft">
-          删除已掌握标记、FSRS 卡片与作答流水。
-          <strong className="font-medium text-ink">偏好和锁屏 PIN 会保留</strong>
+          删除全部「已掌握」记录。<strong className="font-medium text-ink">偏好会保留</strong>
           ，词表本身不受影响。
         </p>
 

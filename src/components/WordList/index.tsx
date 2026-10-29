@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCheck, ListFilter, Sparkles } from "lucide-react";
+import { CheckCheck, ListFilter } from "lucide-react";
 import { BulkSheet } from "./BulkSheet";
 import { FilterBar, type FilterDraft } from "./FilterBar";
 import { Pager } from "./Pager";
@@ -7,7 +7,6 @@ import { ScopeProgress } from "./ScopeProgress";
 import { WordRow as MemoRow } from "./WordRow";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { statusOf } from "@/lib/srs";
 import {
   filterWords,
   loadListView,
@@ -22,16 +21,14 @@ import {
 import { useSelection } from "@/hooks/useSelection";
 import { usePageActive } from "@/hooks/usePageActive";
 import type { VocabStore } from "@/hooks/useVocabStore";
-import type { LevelFilter, MasteryFilter, PageSize, Word } from "@/lib/types";
+import type { LevelFilter, MasteryFilter, PageSize } from "@/lib/types";
 
 export interface WordListPageProps {
   store: VocabStore;
-  onGoReview: () => void;
-  onGoQuiz: () => void;
 }
 
 /** 词表页（§5 F1 / §9 验收 2、3） */
-export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps) {
+export function WordListPage({ store }: WordListPageProps) {
   const active = usePageActive();
   /**
    * 筛选条件 + 页码整体是一个视图对象，并且持久化。
@@ -154,19 +151,9 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
     return () => window.removeEventListener("keydown", onKey);
   }, [active, pageKeys, selection]);
 
-  /*
-   * 行状态按「渲染这一帧的时间戳」算，不再每行 new Date()。
-   * 一页 500 行时那是 500 个 Date 对象；更重要的是同一屏里两行的「今天到期」
-   * 判定不应该跨秒漂移。时间戳跟着 records/mastered 一起算，勾选后立刻刷新。
-   */
-  const nowMs = useMemo(() => Date.now(), [store.records, store.mastered]);
-  const nowForStatus = useMemo(() => new Date(nowMs), [nowMs]);
-  const statusFor = (word: Word) =>
-    statusOf(store.records.get(word.key) ?? null, store.mastered.has(word.key), nowForStatus);
-
   /**
    * 掌握切换的稳定回调。行组件拿到的是同一个函数 + 自己的 key，
-   * 这样 memo 生效；否则每次渲染 500 个行组件全部失效。
+   * 这样 memo 生效；否则每次渲染全部行组件失效。
    */
   const onToggleMastery = useCallback(
     (key: string, next: boolean) => void store.toggleMastery([key], next),
@@ -269,7 +256,7 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
                 <span className="flex-1">
                   单词 <span className="normal-case tracking-normal">/ 释义</span>
                 </span>
-                <span className="hidden lg:inline">排期</span>
+                <span className="hidden lg:inline">掌握</span>
               </div>
 
               <div
@@ -285,7 +272,7 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
                     key={word.key}
                     word={word}
                     index={(current - 1) * pageSize + index + 1}
-                    status={statusFor(word)}
+                    mastered={store.mastered.has(word.key)}
                     checked={selection.keys.has(word.key)}
                     onToggleSelect={selection.toggle}
                     // 交给行自己带 key 回调，父组件不再为每行新建闭包
@@ -318,16 +305,12 @@ export function WordListPage({ store, onGoReview, onGoQuiz }: WordListPageProps)
         />
       )}
 
-      {/* 空态下给两条出口：此刻最可能想做的是「换个条件」或「去学新词」 */}
+      {/* 空态下只给一条出口：此刻唯一想做的是「换个条件」 */}
       {empty && (
-        <div className="flex justify-center gap-2 pb-6">
-          <Button variant="outline" size="touch" onClick={onGoQuiz}>
-            <Sparkles className="h-4 w-4" aria-hidden="true" />
-            去测试
-          </Button>
-          <Button size="touch" onClick={onGoReview}>
+        <div className="flex justify-center pb-6">
+          <Button variant="outline" size="touch" onClick={resetAll}>
             <CheckCheck className="h-4 w-4" aria-hidden="true" />
-            开始复习
+            清空筛选
           </Button>
         </div>
       )}

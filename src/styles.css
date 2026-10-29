@@ -19,7 +19,6 @@
   --color-brand-ink: var(--brand-ink);
   --color-brand-deep: var(--brand-deep);
   --color-brand-wash: var(--brand-wash);
-  --color-brand-500: var(--brand-500);
 
   --color-line: var(--line);
   --color-due: var(--due);
@@ -59,8 +58,6 @@
 
   --ease-panel: cubic-bezier(0.22, 1, 0.36, 1);
 
-  --animate-shake: shake 320ms ease-in-out;
-
   /* ── 动效时长与缓动（统一入口，别在组件里散写 ms）─────────────
    *
    * 设计文档 §1.4 定过「不做进场动画、不给每个卡片加过渡」，
@@ -68,62 +65,8 @@
    * 不用于页面进入、列表渲染、hover 装饰。
    */
   --dur-fast: 120ms; /* 按钮按下、勾选 */
-  --dur-base: 180ms; /* 释义展开、评分反馈 */
-  --dur-slow: 260ms; /* 整卡切换 */
+  --dur-base: 180ms; /* 勾选确认、左栏状态切换 */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* 快速起步、缓慢收尾 */
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* 释义展开：高度从 0 到内容高度，配合透明度 */
-  --animate-reveal: reveal var(--dur-base) var(--ease-out);
-  @keyframes reveal {
-    from {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  /* 卡片切换：新卡从下方轻微进入，暗示「翻页」而不是「重绘」 */
-  --animate-card-in: card-in var(--dur-slow) var(--ease-out);
-  @keyframes card-in {
-    from {
-      opacity: 0;
-      transform: translateY(8px) scale(0.995);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  /* 评分确认：按下瞬间轻微收缩，给「已记录」的触觉替代 */
-  --animate-tap: tap var(--dur-fast) var(--ease-in-out);
-  @keyframes tap {
-    50% {
-      transform: scale(0.97);
-    }
-  }
-  @keyframes shake {
-    0%,
-    100% {
-      transform: translateX(0);
-    }
-    20% {
-      transform: translateX(-7px);
-    }
-    40% {
-      transform: translateX(7px);
-    }
-    60% {
-      transform: translateX(-4px);
-    }
-    80% {
-      transform: translateX(4px);
-    }
-  }
 }
 
 /* ── 设计 token（§1.2）──────────────────────────────────────────── */
@@ -137,8 +80,6 @@
   --brand-ink: #0b6e50;
   --brand-deep: #0a4a3a;
   --brand-wash: #e4f0ea;
-  --brand-500: #1d9e75;
-  --learning: #7fbfaa;
   --line: #dce3dd;
   --due: #9a5b0b;
   --due-wash: #fbf0df;
@@ -210,18 +151,11 @@
     max-width: 72ch;
   }
   /*
-   * 状态左栏（§1.5）：竖条，透明即「未学」。
+   * 状态左栏（§1.5）。
    *
-   * 之前只用颜色区分，而四种状态里三种都是绿系（learning 浅绿 / solid 中绿 /
-   * mastered 深绿），10px 宽的竖条在扫视时几乎分不出来 —— 尤其 solid 与 mastered
-   * 只差一档明度，实际使用时「牢固」和「已掌握」看起来是一样的。
-   *
-   * 现在改成「颜色 + 宽度 + 形状」三重信号：
-   *   due       琥珀实心，3px      —— 唯一暖色，出现即「有事要做」
-   *   learning  浅绿，3px          —— 细线，表示「正在推进」
-   *   solid     中绿，3px + 上端小圆点 —— 点状延伸，表示「趋于稳定」
-   *   mastered  深绿，5px          —— 最粗最深，一眼看出已毕业
-   * 色觉障碍用户靠宽度就能分辨三档绿色（3/3带点/5）。
+   * 复习相关的四种状态（到期 / 学习中 / 牢固 / 顽固词）随复习功能一起移除，
+   * 现在只剩一个语义：这颗词是否被标记「已掌握」。透明 = 未掌握，深绿 5px = 已掌握，
+   * 仍然保留「颜色 + 宽度」双信号，不只靠颜色区分。
    */
   .rail {
     position: relative;
@@ -238,27 +172,6 @@
     transition:
       background var(--dur-base) var(--ease-out),
       width var(--dur-base) var(--ease-out);
-  }
-  /* solid：竖条顶端加一个 5px 圆点，形成「点 + 线」的形状差异 */
-  .rail-solid::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 4px;
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background: var(--brand);
-  }
-  .rail-due::before {
-    background: var(--due);
-  }
-  .rail-learning::before {
-    background: var(--learning);
-  }
-  .rail-solid::before {
-    background: var(--brand);
-    opacity: 0.55;
   }
   .rail-mastered::before {
     background: var(--brand-deep);

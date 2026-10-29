@@ -270,7 +270,7 @@ export function FilterBar({
                 ))}
               </div>
               <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-                日常档按词频前 5000 划；认脸档默认不进复习队列。
+                日常档按词频前 5000 划；认脸档是生僻与书面词，可单独筛出来看。
               </p>
             </section>
 

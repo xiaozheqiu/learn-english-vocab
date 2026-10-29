@@ -6,7 +6,7 @@
  */
 import {
   CEFR_LEVELS,
-  LEVELS,
+  isLevelFilter,
   type Cefr,
   type LevelFilter,
   type MasteryFilter,
@@ -57,12 +57,6 @@ export type OxfordFilter = "all" | "ox3000" | "ox5000" | "none";
 const OXFORD_FILTERS: readonly OxfordFilter[] = ["all", "ox3000", "ox5000", "none"];
 /** 搜索词上限：防一条异常长的串被写进 localStorage 并在启动时反复解析 */
 const MAX_QUERY = 80;
-
-export function isLevelFilter(value: unknown): value is LevelFilter {
-  return (
-    value === "ALL" || (typeof value === "string" && (LEVELS as readonly string[]).includes(value))
-  );
-}
 
 export function defaultListView(level: LevelFilter): ListView {
   return { level, mode: "all", tier: "all", cefr: "all", oxford: "all", query: "", page: 1 };

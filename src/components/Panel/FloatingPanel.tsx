@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronUp, Minimize2, Settings2, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Minimize2, Settings2, X } from "lucide-react";
 import {
   Dialog,
   DialogClose,
@@ -11,14 +11,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { AboutSection } from "./sections/AboutSection";
 import { DataSection } from "./sections/DataSection";
-import { LearnSection } from "./sections/LearnSection";
 import { SettingsSection } from "./sections/SettingsSection";
 import type { FloatingPanelProps as FloatingPanelContract } from "@/components/contracts";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/utils";
 
 const TABS = [
-  { value: "learn", label: "学习" },
   { value: "data", label: "数据" },
   { value: "settings", label: "设置" },
   { value: "about", label: "关于" },
@@ -26,51 +24,35 @@ const TABS = [
 
 type TabValue = (typeof TABS)[number]["value"];
 
-/**
- * 契约（contracts.ts）已包含 open / onOpenChange / store / stats / lock /
- * onLockNow / canInstall / onInstall / onOpenGuide / onGoQuiz / today。
- *
- * 「批量」分区已挪回词表页右下角的浮动按钮（BulkSheet）：
- * 同一份批量动作只留一个入口，浮窗不再重复列一遍全选/反选。
- */
 export type FloatingPanelProps = FloatingPanelContract;
 
 /**
  * 浮窗（§2.3）：统一内容，两种外壳。
  * - 移动端：底部抽屉（Sheet side="bottom"，max-h 85vh，内容区独立滚动）
- * - 桌面端：右下悬浮卡（380px，可最小化成「待复习 N」胶囊）
+ * - 桌面端：右下悬浮卡（380px，可最小化成「Oxford 5000」胶囊）
  *
  * Esc 关闭、关闭后焦点回到触发元素、浮层外背景 aria-hidden 全部由 Radix Dialog 处理。
+ *
+ * 「批量」分区在词表页右下角的浮动按钮（BulkSheet）：同一份批量动作只留一个入口。
+ * 学习/复习/测试那三个分区随功能一起移除，这里只剩数据、设置、关于。
  */
 export function FloatingPanel({
   open,
   onOpenChange,
   store,
-  stats,
-  lock,
-  onLockNow,
   canInstall,
   onInstall,
   onOpenGuide,
-  onGoQuiz,
-  onOpenLeech,
-  today,
 }: FloatingPanelProps) {
   const isDesktop = useIsDesktop();
   const [minimized, setMinimized] = useState(false);
-  const capsuleRef = useRef<HTMLButtonElement>(null);
   // 收起成胶囊会卸载 Tabs，受控保存当前分区，展开后还停在原处
-  const [tab, setTab] = useState<TabValue>("learn");
+  const [tab, setTab] = useState<TabValue>("data");
 
   // 每次重新打开都回到完整卡片；关闭时也清掉最小化，避免下次打开还是胶囊
   useEffect(() => {
     if (!open) setMinimized(false);
   }, [open]);
-
-  // 收起后焦点不能掉到 body：落在胶囊上，键盘用户继续可用
-  useEffect(() => {
-    if (minimized) capsuleRef.current?.focus();
-  }, [minimized]);
 
   // 最小化时 Radix 已卸载，Esc 自己兜住（焦点回位仍由 App 处理）
   useEffect(() => {
@@ -88,23 +70,16 @@ export function FloatingPanel({
     onOpenGuide();
   }, [onOpenChange, onOpenGuide]);
 
-  const goQuiz = useCallback(() => {
-    onOpenChange(false);
-    onGoQuiz();
-  }, [onGoQuiz, onOpenChange]);
-
   // 桌面端最小化：收起成胶囊，点它再展开
   if (isDesktop && open && minimized) {
     return (
       <button
-        ref={capsuleRef}
         type="button"
         onClick={() => setMinimized(false)}
         className="fixed bottom-6 right-6 z-40 flex min-h-11 items-center gap-2 rounded-full border border-line bg-card px-4 py-2 text-[13px] font-medium text-ink shadow-float transition-colors hover:border-brand/40 hover:bg-brand-wash hover:text-brand-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
-        aria-label={`展开学习面板，待复习 ${stats.dueToday} 条`}
+        aria-label="展开面板"
       >
-        <ChevronUp className="h-4 w-4 text-ink-mute" aria-hidden="true" />
-        <span className="tnum">待复习 {stats.dueToday}</span>
+        <span>面板</span>
       </button>
     );
   }
@@ -134,7 +109,7 @@ export function FloatingPanel({
               {/* id / aria-labelledby 交给 Radix 生成，避免和外层 aria-labelledby 打架 */}
               <DialogTitle className="text-[14px] font-semibold text-ink">学习面板</DialogTitle>
               <DialogDescription className="truncate text-[11px] text-ink-mute tnum">
-                今日复习 {stats.todayReviewed} · 待复习 {stats.dueToday} · 连续 {stats.streak} 天
+                已掌握 {store.mastered.size} 个 · 全库 {store.words.length} 条
               </DialogDescription>
             </div>
 
@@ -182,19 +157,6 @@ export function FloatingPanel({
 
             {/* 内容区独立滚动；底部留 safe-area，避免被 iPhone 手势条压住 */}
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
-              <TabsContent value="learn" className="space-y-3">
-                <LearnSection
-                  stats={stats}
-                  prefs={store.prefs}
-                  today={today}
-                  onPrefsChange={(patch) => void store.setPrefs(patch)}
-                  onOpenLeech={onOpenLeech}
-                />
-                <Button variant="ghost" size="touch" className="w-full" onClick={goQuiz}>
-                  去测试练错词
-                </Button>
-              </TabsContent>
-
               <TabsContent value="data">
                 <DataSection
                   store={store}
@@ -205,12 +167,7 @@ export function FloatingPanel({
               </TabsContent>
 
               <TabsContent value="settings">
-                <SettingsSection
-                  prefs={store.prefs}
-                  setPrefs={store.setPrefs}
-                  lock={lock}
-                  onLockNow={onLockNow}
-                />
+                <SettingsSection prefs={store.prefs} setPrefs={store.setPrefs} />
               </TabsContent>
 
               <TabsContent value="about">

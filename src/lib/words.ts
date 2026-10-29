@@ -33,7 +33,7 @@ interface CefrRecord {
 /**
  * CEFR 分级表（scripts/gen-cefr.py 从牛津数据生成）。
  * 与 tiers 同样是一次性加载、失败降级：拿不到就不显示分级，
- * 不影响词表和复习 —— 分级是增强信息，不是启动必需。
+ * 不影响词表 —— 分级是增强信息，不是启动必需。
  */
 let cefrPromise: Promise<Map<string, CefrRecord>> | null = null;
 
@@ -168,55 +168,4 @@ export function cachedAll(): Word[] {
 
 export function isLoaded(levels: readonly Level[]): boolean {
   return levels.every((level) => cache.has(level));
-}
-
-/**
- * 释义抽取：拼写题只接受词条里的并列写法（`a, an`），去掉括注。
- * 返回去重后的候选拼写，小写化。
- */
-export function acceptedSpellings(word: string): string[] {
-  const out = new Set<string>();
-  const cleaned = word.replace(/\([^)]*\)/g, " ").trim();
-  for (const part of cleaned.split(/\s*[,/;]\s*/)) {
-    const norm = normalizeSpelling(part);
-    if (norm) out.add(norm);
-  }
-  const whole = normalizeSpelling(cleaned);
-  if (whole) out.add(whole);
-  return [...out];
-}
-
-/** 去掉大小写、尾随标点、内部多余空格 */
-export function normalizeSpelling(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[.,;:!?'"’”“()[\]]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** 释义首段，用于干扰项与列表展示 */
-/**
- * 释义首义：取第一个义项，用于选择题题干与干扰项。
- *
- * 分隔符必须同时覆盖 `；` `／` `/` `|`：旧数据用 `／` 分隔多义，
- * 现在的牛津数据统一用 `；`（如「库存；现货；储备」）。只认 `／` 会让
- * 首义退化成整串三个义项 —— 选择题里四个选项都变成一长串，直接没法做。
- */
-export function primaryMeaning(cn: string): string {
-  const first = cn.split(/\s*[；;／/|]\s*/)[0]?.trim();
-  return first || cn.trim();
-}
-
-/** 词性归一：把 `n., v.` 拆成 ['n.','v.']，用于「同词性」干扰项匹配 */
-export function posTags(pos: string): string[] {
-  return pos
-    .split(/\s*[,，/]\s*/)
-    .map((p) => p.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-export function samePos(a: Word, b: Word): boolean {
-  const left = new Set(posTags(a.pos));
-  return posTags(b.pos).some((tag) => left.has(tag));
 }

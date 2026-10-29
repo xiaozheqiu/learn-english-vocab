@@ -1,5 +1,5 @@
 /**
- * 浏览器回归总入口：先起 dev server，再依次跑两个套件。
+ * 浏览器回归总入口：先起 dev server，再依次跑三个套件（flow / edge / pwa-update）。
  *
  * 用法：
  *   node e2e/run.mjs            # 自己起服务（端口被占则复用）
@@ -40,7 +40,7 @@ if (!(await isUp(BASE))) {
  * pwa-update 需要 dist/（自己起静态服务器、自己造 A/B 夹具），
  * 和 dev server 的两套流程无关，所以放最后单独跑。
  */
-const suites = ["flow.mjs", "edge.mjs", "learning.mjs", "pwa-update.mjs"];
+const suites = ["flow.mjs", "edge.mjs", "pwa-update.mjs"];
 let failed = 0;
 let total = 0;
 

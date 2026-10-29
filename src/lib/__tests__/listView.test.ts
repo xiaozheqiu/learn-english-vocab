@@ -2,12 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   defaultListView,
   filterWords,
-  isLevelFilter,
   parseListView,
   scopeProgress,
   type ListCriteria,
 } from "../listView";
-import type { Word } from "../types";
+import { isLevelFilter, type Word } from "../types";
 
 function w(level: Word["level"], word: string, cn = "释义"): Word {
   return {
