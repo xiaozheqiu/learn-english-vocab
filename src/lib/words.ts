@@ -1,5 +1,5 @@
 /** 词表加载、主键生成、释义抽取（§6 lib/words.ts） */
-import { isCefr, type Level, type RawRow, type Tier, type Word } from "./types";
+import { type Level, type RawRow, type Tier, type Word } from "./types";
 import { LEVELS } from "./types";
 
 const cache = new Map<Level, Word[]>();
@@ -23,32 +23,42 @@ export interface TierInfo {
   tier: Tier;
 }
 
-interface CefrRecord {
-  cefr: string;
-  senses: string[];
-  ox3000: boolean;
-  ox5000: boolean;
+/**
+ * 牛津官方标记。
+ * 两个字段都是可选的：词不在官方表里时那条记录就是空对象，
+ * 生成脚本只写存在的标记，不写 false。
+ */
+interface OxfordRecord {
+  ox3000?: boolean;
+  ox5000?: boolean;
 }
 
 /**
- * CEFR 分级表（scripts/gen-cefr.py 从牛津数据生成）。
- * 与 tiers 同样是一次性加载、失败降级：拿不到就不显示分级，
- * 不影响词表 —— 分级是增强信息，不是启动必需。
+ * 牛津官方词表标记（scripts/gen-oxford.py 从牛津快照生成）。
+ *
+ * 这个文件原来叫 cefr.json，带词条级 / 义项级 CEFR，用来做「难度」筛选；
+ * 那个维度和词表自带的 A1–C1 等级 99% 重合（5323 条里 5280 条一致），
+ * 已经移除，文件也随之只留两个官方标记，从 425KB 收到 175KB。
+ *
+ * 与 tiers 一样是一次性加载、失败降级：拿不到就没有标记，
+ * 不影响词表 —— 标记是增强信息，不是启动必需。
  */
-let cefrPromise: Promise<Map<string, CefrRecord>> | null = null;
+let oxfordPromise: Promise<Map<string, OxfordRecord>> | null = null;
 
-export function loadCefrIndex(): Promise<Map<string, CefrRecord>> {
-  if (!cefrPromise) {
-    cefrPromise = (async () => {
+export function loadOxfordIndex(): Promise<Map<string, OxfordRecord>> {
+  if (!oxfordPromise) {
+    oxfordPromise = (async () => {
       try {
-        const mod = (await import("../data/cefr.json")) as { default: Record<string, CefrRecord> };
+        const mod = (await import("../data/oxford.json")) as {
+          default: Record<string, OxfordRecord>;
+        };
         return new Map(Object.entries(mod.default ?? {}));
       } catch {
-        return new Map<string, CefrRecord>();
+        return new Map<string, OxfordRecord>();
       }
     })();
   }
-  return cefrPromise;
+  return oxfordPromise;
 }
 
 let tierPromise: Promise<Map<string, TierInfo>> | null = null;
@@ -90,8 +100,6 @@ export function buildKeys(level: Level, rows: readonly RawRow[]): Word[] {
     seq: String(r[4] ?? ""),
     rank: 0,
     tier: "core" as Tier,
-    cefr: "" as const,
-    senseCefr: [] as readonly ("" | never)[],
     ox3000: false,
     ox5000: false,
   }));
@@ -125,21 +133,17 @@ async function importLevel(level: Level): Promise<readonly RawRow[]> {
 export async function loadLevel(level: Level): Promise<Word[]> {
   const hit = cache.get(level);
   if (hit) return hit;
-  const [rows, ranks, cefr] = await Promise.all([
+  const [rows, ranks, oxford] = await Promise.all([
     importLevel(level),
     loadTierOrder(),
-    loadCefrIndex(),
+    loadOxfordIndex(),
   ]);
   const words = buildKeys(level, rows);
   for (const word of words) {
     const info = ranks.get(word.key);
     word.rank = info?.rank ?? 0;
     word.tier = info?.tier ?? "core";
-    const rec = cefr.get(word.key);
-    word.cefr = isCefr(rec?.cefr) ? rec!.cefr : "";
-    // 义项级 CEFR 与 cn 的「；」分段对齐；牛津未标的位置留空串，不填补位
-    const raw = rec?.senses ?? [];
-    word.senseCefr = word.cn.split(/\s*[；;]\s*/).map((_, i) => (isCefr(raw[i]) ? raw[i] : ""));
+    const rec = oxford.get(word.key);
     word.ox3000 = rec?.ox3000 ?? false;
     word.ox5000 = rec?.ox5000 ?? false;
   }

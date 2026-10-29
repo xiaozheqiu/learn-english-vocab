@@ -112,15 +112,53 @@ try {
   await pageJump.press("Enter");
   await page.waitForTimeout(300);
 
-  /* ── 常驻面板：滚一段，走应用内路径去词性对照再回来，位置还在 ── */
+  /* ── 布局：头部与底部分页固定，只有中间词表滚 ──────────────── */
+  /*
+   * 滚动层是词表内部那一段（头部筛选 + 板块进度 + 表头在它上面，
+   * 分页在它下面）。所以这里量三件事：
+   *   1. 滚起来之后顶栏与筛选条的位置不动；
+   *   2. 分页条仍贴在视口底部；
+   *   3. 滚的是词表那一段，不是整页。
+   */
+  const listScroller = () =>
+    page.evaluate(() => {
+      const grid = document.querySelector('[data-testid="word-grid"]');
+      const scroller = grid?.parentElement;
+      const header = document.querySelector("header");
+      const filterBar = document.querySelector('[aria-label="词表筛选"]');
+      const pager = document.querySelector('nav[aria-label="分页"]');
+      const rect = (el) => (el ? Math.round(el.getBoundingClientRect()) : null);
+      return {
+        scrollTop: scroller ? Math.round(scroller.scrollTop) : -1,
+        headerTop: header ? Math.round(header.getBoundingClientRect().top) : null,
+        filterTop: filterBar ? Math.round(filterBar.getBoundingClientRect().top) : null,
+        pagerBottom: pager ? Math.round(pager.getBoundingClientRect().bottom) : null,
+        viewportH: window.innerHeight,
+        bodyScroll: document.scrollingElement.scrollTop,
+      };
+    });
+
   await page.locator('[role="row"][data-key]').nth(12).scrollIntoViewIfNeeded();
   await page.waitForTimeout(200);
-  const paneScroll = () =>
-    page.evaluate(() => {
-      const pane = document.querySelector("main > div:not([hidden])");
-      return pane ? Math.round(pane.scrollTop) : -1;
-    });
-  const scrollBefore = await paneScroll();
+  const beforeScroll = await listScroller();
+  report.check(
+    "layout.listScrolls",
+    beforeScroll.scrollTop > 0 && beforeScroll.bodyScroll === 0,
+    JSON.stringify(beforeScroll),
+  );
+  report.check(
+    "layout.headerStaysPut",
+    beforeScroll.headerTop === 0 && beforeScroll.filterTop > 0 && beforeScroll.filterTop < 120,
+    `header=${beforeScroll.headerTop} filter=${beforeScroll.filterTop}`,
+  );
+  report.check(
+    "layout.pagerPinnedToBottom",
+    beforeScroll.pagerBottom !== null &&
+      Math.abs(beforeScroll.pagerBottom - beforeScroll.viewportH) <= 2,
+    `pagerBottom=${beforeScroll.pagerBottom} viewport=${beforeScroll.viewportH}`,
+  );
+
+  const scrollBefore = beforeScroll.scrollTop;
   // 应用内路径（不刷新页面）：面板 → 关于 → 打开词性对照表
   await nav.panel(page).click();
   await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel 0" });
@@ -136,12 +174,12 @@ try {
   });
   /*
    * 滚动位置是面板可见后的一个 effect 里恢复的，和路由变化不在同一帧。
-   * 所以等它自己落位，而不是切完立刻读一次（那样几乎必然读到 0）。
+   * 所以等它自己落位，而不是切完立刻读一次。
    */
   const scrollAfter = await until(
     page,
     async () => {
-      const top = await paneScroll();
+      const top = (await listScroller()).scrollTop;
       return top > 0 ? top : 0;
     },
     { label: "scroll restored", timeout: 4000 },

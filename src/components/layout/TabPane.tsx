@@ -15,6 +15,10 @@ export interface TabPaneProps {
  * 所以主页面第一次进入后一直挂着，只用 hidden 控制显隐；
  * 每个面板自己是一个滚动容器，滚动位置天然按页保留，不需要记 window.scrollY。
  *
+ * 布局约定：外壳是全屏 flex 列（顶栏 + main + 底栏都不滚动），
+ * 这里 `min-h-0 flex-1` 负责吃掉剩余高度，滚动只发生在面板内部。
+ * 也就是说顶栏与底栏天然固定，中间那一段才是滚动的。
+ *
  * 懒挂载：没进过的页面不渲染，词性对照要等真正点进去才解析 Markdown。
  */
 export function TabPane({ active, children }: TabPaneProps) {
@@ -54,7 +58,7 @@ export function TabPane({ active, children }: TabPaneProps) {
       <div
         ref={ref}
         hidden={!visible}
-        className="h-full overflow-y-auto overscroll-contain pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+        className="h-full min-h-0 overflow-y-auto overscroll-contain"
       >
         {mounted ? children : null}
       </div>

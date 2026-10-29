@@ -11,7 +11,7 @@ import {
   type MasteryFilter,
   type PageSize,
 } from "@/lib/types";
-import type { CefrFilter, OxfordFilter, TierFilter } from "@/lib/listView";
+import type { OxfordFilter, TierFilter } from "@/lib/listView";
 import { cn } from "@/lib/utils";
 
 /** 抽屉里「确定」要一次提交的一整套条件 */
@@ -19,7 +19,6 @@ export interface FilterDraft {
   level: LevelFilter;
   mode: MasteryFilter;
   tier: TierFilter;
-  cefr: CefrFilter;
   oxford: OxfordFilter;
   pageSize: PageSize;
 }
@@ -29,7 +28,6 @@ export interface FilterBarProps {
   level: LevelFilter;
   mode: MasteryFilter;
   tier: TierFilter;
-  cefr: CefrFilter;
   oxford: OxfordFilter;
   /** 偏好里的默认等级：和它一致时按钮显示「筛选」而不是一条默认条件 */
   defaultLevel: LevelFilter;
@@ -40,7 +38,6 @@ export interface FilterBarProps {
     level: LevelFilter,
     mode: MasteryFilter,
     tier: TierFilter,
-    cefr: CefrFilter,
     oxford: OxfordFilter,
   ) => number;
   onQuery: (query: string) => void;
@@ -70,7 +67,6 @@ export function FilterBar({
   level,
   mode,
   tier,
-  cefr,
   oxford,
   defaultLevel,
   query,
@@ -80,14 +76,14 @@ export function FilterBar({
   onApply,
 }: FilterBarProps) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<FilterDraft>({ level, mode, tier, cefr, oxford, pageSize });
+  const [draft, setDraft] = useState<FilterDraft>({ level, mode, tier, oxford, pageSize });
   const input = useRef<HTMLInputElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const isDesktop = useIsDesktop();
 
   // 每次打开都从「当前生效的条件」起稿，关上时丢弃草稿的语义才成立
   const onOpenChange = (next: boolean) => {
-    if (next) setDraft({ level, mode, tier, cefr, oxford, pageSize });
+    if (next) setDraft({ level, mode, tier, oxford, pageSize });
     setOpen(next);
     if (!next) window.setTimeout(() => trigger.current?.focus(), 0);
   };
@@ -116,21 +112,15 @@ export function FilterBar({
   const levelLabel = level === "ALL" ? "全部等级" : level;
   const modeLabel = MODES.find((item) => item.value === mode)?.label ?? "全部";
   // 「有筛选」只算用户主动加的：把默认等级也算进去的话，一进 App 按钮就自带高亮
-  const filtered =
-    level !== defaultLevel ||
-    mode !== "all" ||
-    tier !== "all" ||
-    cefr !== "all" ||
-    oxford !== "all";
+  const filtered = level !== defaultLevel || mode !== "all" || tier !== "all" || oxford !== "all";
   // 草稿和已生效不同：抽屉里提示一句，免得以为已经生效了
   const pending =
     draft.level !== level ||
     draft.mode !== mode ||
     draft.tier !== tier ||
-    draft.cefr !== cefr ||
     draft.oxford !== oxford ||
     draft.pageSize !== pageSize;
-  const draftTotal = countFor(draft.level, draft.mode, draft.tier, draft.cefr, draft.oxford);
+  const draftTotal = countFor(draft.level, draft.mode, draft.tier, draft.oxford);
 
   return (
     <section aria-label="词表筛选" className="border-b border-line bg-card/80">
@@ -275,36 +265,6 @@ export function FilterBar({
             </section>
 
             {/*
-              CEFR：牛津的义项级难度。
-              和「等级」不是一回事 —— 等级是旧数据的整词标签（一个词一个值），
-              CEFR 取自最常用义，且能区分 above 的「在上方」(a1) 与「自视过高」(c2)。
-            */}
-            <section className="mt-4" aria-labelledby="filter-cefr-title">
-              <h3 id="filter-cefr-title" className="text-[13px] font-medium text-ink">
-                难度（CEFR）
-              </h3>
-              <div
-                data-testid="filter-cefr"
-                role="group"
-                aria-labelledby="filter-cefr-title"
-                className="mt-1.5 grid grid-cols-4 gap-1.5"
-              >
-                {(["all", "a1", "a2", "b1", "b2", "c1", "c2"] as const).map((value) => (
-                  <Button
-                    key={value}
-                    size="touch"
-                    variant={draft.cefr === value ? "subtle" : "outline"}
-                    aria-pressed={draft.cefr === value}
-                    onClick={() => setDraft((current) => ({ ...current, cefr: value }))}
-                    className={cn("w-full", draft.cefr === value && "border-brand/40 font-medium")}
-                  >
-                    {value === "all" ? "全部" : value.toUpperCase()}
-                  </Button>
-                ))}
-              </div>
-            </section>
-
-            {/*
               牛津官方词表：这是判断「这个词到底该不该学」最权威的一把尺子。
               Oxford 3000/5000 是牛津按学习者需求筛的清单，比任何词频阈值都可靠。
               词表里 4955 个词有 4888 个在官方表内，剩下 95 个可以单独筛出来看。
@@ -415,7 +375,6 @@ export function FilterBar({
                     level: "ALL",
                     mode: "all",
                     tier: "all",
-                    cefr: "all",
                     oxford: "all",
                     pageSize: current.pageSize,
                   }))

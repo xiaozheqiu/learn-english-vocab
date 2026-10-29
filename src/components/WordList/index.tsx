@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCheck, ListFilter } from "lucide-react";
+import { ListFilter } from "lucide-react";
 import { BulkSheet } from "./BulkSheet";
 import { FilterBar, type FilterDraft } from "./FilterBar";
 import { Pager } from "./Pager";
@@ -14,12 +14,12 @@ import {
   scopeProgress,
   type ListCriteria,
   type ListView,
-  type CefrFilter,
   type OxfordFilter,
   type TierFilter,
 } from "@/lib/listView";
 import { useSelection } from "@/hooks/useSelection";
 import { usePageActive } from "@/hooks/usePageActive";
+import { useScrollKeeper } from "@/hooks/useScrollKeeper";
 import type { VocabStore } from "@/hooks/useVocabStore";
 import type { LevelFilter, MasteryFilter, PageSize } from "@/lib/types";
 
@@ -73,14 +73,8 @@ export function WordListPage({ store }: WordListPageProps) {
    * 只读 words / mastered / query，所以搜索框每敲一个字不会连带重算一遍筛选结果。
    */
   const countFor = useCallback(
-    (
-      level: LevelFilter,
-      mode: MasteryFilter,
-      tier: TierFilter,
-      cefr: CefrFilter,
-      oxford: OxfordFilter,
-    ) => {
-      const criteria: ListCriteria = { level, mode, tier, cefr, oxford, query: view.query };
+    (level: LevelFilter, mode: MasteryFilter, tier: TierFilter, oxford: OxfordFilter) => {
+      const criteria: ListCriteria = { level, mode, tier, oxford, query: view.query };
       return filterWords(store.words, criteria, store.mastered).length;
     },
     [store.mastered, store.words, view.query],
@@ -123,6 +117,19 @@ export function WordListPage({ store }: WordListPageProps) {
   const pageKeys = useMemo(() => rows.map((w) => w.key), [rows]);
   const filteredKeys = useMemo(() => filtered.map((w) => w.key), [filtered]);
   const selection = useSelection(pageKeys, filteredKeys);
+
+  /**
+   * 表格区自己滚动（头部与底部分页固定）。
+   * 切到别的页面再回来时位置要还在；而翻页 / 换筛选后必须回到顶部 ——
+   * 否则从第 3 页翻到第 4 页，人还停在第 3 页中间的位置。 */
+  const scroll = useScrollKeeper<HTMLDivElement>(active);
+  const scrollKey = `${view.level}|${view.mode}|${view.tier}|${view.oxford}|${view.query}|${current}`;
+  const lastScrollKey = useRef(scrollKey);
+  useEffect(() => {
+    if (lastScrollKey.current === scrollKey) return;
+    lastScrollKey.current = scrollKey;
+    scroll.reset();
+  }, [scroll, scrollKey]);
 
   const applyMastery = async (value: boolean) => {
     const keys = selection.scopedKeys();
@@ -174,7 +181,6 @@ export function WordListPage({ store }: WordListPageProps) {
         level: next.level,
         mode: next.mode,
         tier: next.tier,
-        cefr: next.cefr,
         oxford: next.oxford,
         page: 1,
       }));
@@ -192,7 +198,6 @@ export function WordListPage({ store }: WordListPageProps) {
       level: "ALL",
       mode: "all",
       tier: "all",
-      cefr: "all",
       oxford: "all",
       query: "",
       page: 1,
@@ -200,20 +205,29 @@ export function WordListPage({ store }: WordListPageProps) {
   }, []);
 
   return (
-    <div className="flex min-h-full flex-col">
-      <FilterBar
-        level={view.level}
-        mode={view.mode}
-        tier={view.tier}
-        cefr={view.cefr}
-        oxford={view.oxford}
-        defaultLevel={store.prefs.defaultLevel}
-        query={view.query}
-        pageSize={pageSize}
-        countFor={countFor}
-        onQuery={(next) => setView((value) => ({ ...value, query: next, page: 1 }))}
-        onApply={onApplyFilter}
-      />
+    /**
+     * 三段式布局：顶栏内容（筛选 + 板块进度 + 表头）与底部分页都固定，
+     * 只有中间那张词表在滚动。
+     *
+     * 之前整页靠 TabPane 滚，翻到第 40 行时搜索框和分页器都飞出屏幕，
+     * 想换个词或翻页必须先把列表滚回去。现在外层 `h-full min-h-0 flex-col`，
+     * 中间那段 `flex-1 min-h-0 overflow-y-auto` 自己滚 —— 头部与底部天然不动。
+     */
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0">
+        <FilterBar
+          level={view.level}
+          mode={view.mode}
+          tier={view.tier}
+          oxford={view.oxford}
+          defaultLevel={store.prefs.defaultLevel}
+          query={view.query}
+          pageSize={pageSize}
+          countFor={countFor}
+          onQuery={(next) => setView((value) => ({ ...value, query: next, page: 1 }))}
+          onApply={onApplyFilter}
+        />
+      </div>
 
       {store.loadError && (
         <p
@@ -231,41 +245,52 @@ export function WordListPage({ store }: WordListPageProps) {
       ) : (
         <>
           {/* 板块进度常驻（空态也显示）：筛选结果为空时更需要知道「这个板块本来有多少」 */}
-          <ScopeProgress progress={progress} />
+          <div className="shrink-0">
+            <ScopeProgress progress={progress} />
+          </div>
 
-          {empty ? (
-            <EmptyState level={view.level} mode={view.mode} query={view.query} onReset={resetAll} />
-          ) : (
-            <>
-              <div
-                className="flex items-center gap-2.5 border-b border-line bg-paper/95 px-3.5 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-mute backdrop-blur"
-                role="row"
-              >
-                <span className="flex w-[18px] justify-center">
-                  <Checkbox
-                    checked={selection.pageState}
-                    onCheckedChange={(value) => selection.selectPage(value === true)}
-                    aria-label={
-                      selection.pageState === true
-                        ? `取消全选本页 ${pageKeys.length} 条`
-                        : `全选本页 ${pageKeys.length} 条`
-                    }
-                  />
-                </span>
-                <span className="w-6 text-right">#</span>
-                <span className="flex-1">
-                  单词 <span className="normal-case tracking-normal">/ 释义</span>
-                </span>
-                <span className="hidden lg:inline">掌握</span>
-              </div>
+          {!empty && (
+            <div
+              className="flex shrink-0 items-center gap-2.5 border-b border-line bg-paper/95 px-3.5 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-mute backdrop-blur"
+              role="row"
+            >
+              <span className="flex w-[18px] justify-center">
+                <Checkbox
+                  checked={selection.pageState}
+                  onCheckedChange={(value) => selection.selectPage(value === true)}
+                  aria-label={
+                    selection.pageState === true
+                      ? `取消全选本页 ${pageKeys.length} 条`
+                      : `全选本页 ${pageKeys.length} 条`
+                  }
+                />
+              </span>
+              <span className="w-6 text-right">#</span>
+              <span className="flex-1">
+                单词 <span className="normal-case tracking-normal">/ 释义</span>
+              </span>
+              <span className="hidden lg:inline">掌握</span>
+            </div>
+          )}
 
+          {/* 唯一的滚动区：只有这张表会动 */}
+          <div ref={scroll.ref} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {empty ? (
+              <EmptyState
+                level={view.level}
+                mode={view.mode}
+                query={view.query}
+                onReset={resetAll}
+              />
+            ) : (
+              /* 底部留白：可拖动的批量按钮浮在右下角，最后一行要能滚到它上面 */
               <div
                 ref={listRef}
                 role="grid"
                 aria-label="词表"
                 data-testid="word-grid"
                 aria-rowcount={filtered.length}
-                className="flex-1 bg-card"
+                className="bg-card pb-16"
               >
                 {rows.map((word, index) => (
                   <MemoRow
@@ -280,9 +305,13 @@ export function WordListPage({ store }: WordListPageProps) {
                   />
                 ))}
               </div>
+            )}
+          </div>
 
+          {!empty && (
+            <div className="shrink-0 border-t border-line bg-paper/95 backdrop-blur">
               <Pager page={current} pages={pages} total={filtered.length} onPage={setPage} />
-            </>
+            </div>
           )}
         </>
       )}
@@ -303,16 +332,6 @@ export function WordListPage({ store }: WordListPageProps) {
           onMarkMastered={() => void applyMastery(true)}
           onUnmarkMastered={() => void applyMastery(false)}
         />
-      )}
-
-      {/* 空态下只给一条出口：此刻唯一想做的是「换个条件」 */}
-      {empty && (
-        <div className="flex justify-center pb-6">
-          <Button variant="outline" size="touch" onClick={resetAll}>
-            <CheckCheck className="h-4 w-4" aria-hidden="true" />
-            清空筛选
-          </Button>
-        </div>
       )}
     </div>
   );
@@ -336,7 +355,7 @@ function EmptyState({
       ? `${scope} 还没有标记已掌握的词`
       : `${scope} 里没有符合条件的词`;
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+    <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 py-16 text-center">
       <ListFilter className="h-8 w-8 text-ink-mute" aria-hidden="true" />
       <p className="text-[14px] font-medium text-ink">{reason}</p>
       <p className="text-[13px] text-ink-soft">换个筛选条件，或回到全库继续找。</p>

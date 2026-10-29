@@ -74,7 +74,7 @@ export function SettingsSection({ prefs, setPrefs }: SettingsSectionProps) {
           关于这个应用
         </h3>
         <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-          纯前端静态词表：按等级 / 档位 / CEFR / 牛津官方词表筛选与搜索，
+          纯前端静态词表：按等级 / 档位 / 牛津官方词表筛选与搜索，
           标记「已掌握」后进度只存在本机浏览器。
         </p>
       </section>

@@ -2,8 +2,10 @@
 
 线上地址：<https://xiaozheqiu.github.io/learn-english-vocab/>
 
-移动优先的 Oxford 3000 / 5000 词表（PWA）：5323 条 A1–C1 词条，按等级 / 档位 / CEFR /
-牛津官方词表筛选与搜索，逐条标记「已掌握」，全部在本机浏览器完成，无服务端。
+移动优先的 Oxford 3000 / 5000 词表（PWA）：5323 条 A1–C1 词条，按等级 / 档位 / 牛津官方
+词表筛选与搜索，逐条标记「已掌握」，全部在本机浏览器完成，无服务端。
+
+布局是三段式：顶栏与筛选 / 板块进度 / 表头固定在顶部，分页固定在底部，只有中间的词表在滚动。
 
 > v3.0.0 起应用收回到「词表」这一个职责：**PIN 锁屏 → 移除**，**学习节奏设置 → 移除**，
 > **复习与练习（含 FSRS 排期、抽题、顽固词）→ 移除**。历史数据里的「已掌握」标记原样保留，
@@ -29,8 +31,8 @@ Vite 以 `host: true` 启动，终端会同时打印 Local 与 Network 地址，
 
 ```bash
 npm run typecheck    # tsc --noEmit
-npm run test         # vitest（算法层纯函数，49 个）
-npm run test:e2e     # 浏览器回归（Playwright，三个套件 83 项断言）
+npm run test         # vitest（算法层纯函数，51 个）
+npm run test:e2e     # 浏览器回归（Playwright，三个套件 88 项断言）
 npm run build        # data + typecheck + vite build（含 PWA）
 ```
 
@@ -130,7 +132,7 @@ v2 老备份（带 `srs` / `days`）导出文件仍能导入：那两个字段�
 
 ## 词表视图的状态
 
-筛选条件（等级 / 档位 / CEFR / 牛津词表 / 掌握状态 / 搜索词）与页码是一个 `ListView`
+筛选条件（等级 / 档位 / 牛津词表 / 掌握状态 / 搜索词）与页码是一个 `ListView`
 对象，写进 `localStorage["ox5000-list-view-v2"]`。刷新、被系统回收后重进、换标签页再回来
 都还原到原来的板块与页。读回时逐字段校验（非法等级、0/负数/NaN 页码、超长搜索词各自
 单独回落），坏值不会让整条视图作废。隐私模式下写失败就退回纯内存行为。
@@ -138,6 +140,39 @@ v2 老备份（带 `srs` / `days`）导出文件仍能导入：那两个字段�
 抽屉里的条件在按「确定」之前只是草稿，列表不动；关闭抽屉即丢弃。
 板块进度（`A1 已掌握 12 / 900`）分母固定是板块总词数，不吃搜索词与掌握筛选；
 搜索时列表跨等级，进度也跟着报全库。
+
+### 为什么筛选里只有一套等级
+
+抽屉里曾经同时有「等级（A1–C1）」和「难度（CEFR）」，那是两套分级做同一件事：
+词条级 CEFR 取的是首义难度，而词表自带的 A1–C1 标签本来就是这个意思。
+实测 5323 条里 **5280 条（99.2%）两者完全一致**，剩下 43 条多是 March / May 这类
+同形异义词（月份 vs 三月）。用户看到两个下拉，实际筛出的是同一批词。
+
+所以 CEFR 维度整体移除：界面上没了「难度」分区，`Word` 上也不再带 `cefr` /
+`senseCefr` 字段，`src/data/cefr.json` 瘦成只保留两个官方标记并改名 `oxford.json`
+（425KB → 175KB，预缓存跟着少 197KB）。生成脚本同步改名 `scripts/gen-oxford.py`。
+
+保留下来的三个业务维度各回答一个不同的问题：
+
+| 维度     | 回答的问题                 | 来源                          |
+| -------- | -------------------------- | ----------------------------- |
+| 等级     | 这个词在教学大纲里算几级   | 词表原数据的 A1–C1            |
+| 学习档位 | 这个词值不值得花时间背     | 词频 + 官方标记（tiers.json） |
+| 牛津词表 | 牛津官方清单里有没有这个词 | Oxford 3000 / 5000 标记       |
+
+### 滚动与固定
+
+外壳是 `h-[100dvh] flex flex-col`，顶栏 / main / 底部分页都不滚，滚动只发生在词表内部那一段
+（`min-h-0 flex-1 overflow-y-auto`）。这样翻到第 40 行时搜索框和分页器都还在原位。
+
+词表滚动的两个细节写在 `useScrollKeeper` 里，都是实测踩出来的：
+
+- **必须用 callback ref**。滚动容器只在「加载完且非空态」时才渲染，用
+  `useRef` + `useEffect([])` 会在首次 mount 拿到 `null` 且永不重跑，监听装不到节点上。
+- **恢复后要压一帧屏蔽 scroll 事件**。面板重新可见时浏览器会把位置夹到 0 并补发一次
+  `scroll`，不屏蔽它就会把刚写回去的位置又抹成 0（表现为「切页回来必回顶部」）。
+
+翻页 / 换筛选时则主动 `reset()` 回顶部 —— 否则从第 3 页翻到第 4 页，人还停在上一页中间。
 
 词表与词性对照都是**常驻**面板：第一次进入后一直挂着，切路由只切 `hidden`，每个面板自己滚。
 所以从词性对照返回，筛选、页码与滚动位置都还在。挂在 window 上的快捷键（Shift+↑↓ 扩选）
@@ -159,7 +194,7 @@ src/
   styles.css                  设计 token
   lib/
     types.ts                  共享类型 + 常量
-    words.ts                  词表加载与主键生成
+    words.ts                  词表加载、主键生成、牛津官方标记
     date.ts                   本地时区日期工具
     db.ts                     IndexedDB 仓储 + 迁移 + 导出/导入
     route.ts                  hash 路由
@@ -169,17 +204,20 @@ src/
     useVocabStore.ts          数据状态 + 写入编排
     useSelection.ts           词表选中集合（运算在 lib/selection.ts）
     usePageActive.ts          常驻面板的可见性，门控 window 快捷键
+    useScrollKeeper.ts        词表滚动位置（callback ref + 隐藏期屏蔽）
     useMediaQuery.ts          断点与 reduced-motion
     useFloatingPosition.ts    可拖动贴边的浮动按钮
     usePwaUpdate.ts           新版本检查与更新
   components/
     ui/                       shadcn 组件（button input card badge checkbox tabs progress sheet select）
-    layout/                   TopBar / TabPane（常驻面板 + 滚动保存）
+    layout/                   TopBar / TabPane（常驻面板；外壳不滚，内容自己滚）
     WordList/                 WordRow / BulkSheet / FilterBar / Pager / ScopeProgress
     Panel/                    FloatingPanel（抽屉/悬浮卡）+ 数据 / 设置 / 关于 三个分区
     GuidePage.tsx             词性对照（Markdown）
     UpdatePrompt.tsx          新版本弹窗
 scripts/build-data.mjs        data/*.js → src/data/*.json
+scripts/gen-oxford.py         牛津快照 → src/data/oxford.json（官方 3000/5000 标记）
+scripts/gen-tiers.py          牛津快照 + ECDICT → src/data/tiers.json（档位与顺序）
 docs/requirements-v2.md       v2 需求文档（历史存档，含已移除的复习/锁屏设计）
 ```
 

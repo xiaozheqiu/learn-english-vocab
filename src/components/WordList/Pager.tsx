@@ -42,7 +42,11 @@ export function Pager({ page, pages, total, onPage }: PagerProps) {
 
   return (
     <nav
-      className="mt-3 flex items-center justify-center gap-2 px-3 pb-2 text-[13px] text-ink-soft"
+      /**
+       * 固定在底栏：不给上外边距，底部留出安全区，iPhone 手势条不压按钮。
+       * 之前它是列表最后一个元素，跟着内容滚走 —— 翻到第 40 行就看不见了。
+       */
+      className="flex items-center justify-center gap-2 px-3 py-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] text-[13px] text-ink-soft"
       aria-label="分页"
     >
       <Button

@@ -4,15 +4,7 @@
  * 为什么单独一个文件：这三件事都是「输入快照、输出结果」，不碰 React，
  * 可以直接单测；组件只做 setState 包装。
  */
-import {
-  CEFR_LEVELS,
-  isLevelFilter,
-  type Cefr,
-  type LevelFilter,
-  type MasteryFilter,
-  type Tier,
-  type Word,
-} from "./types";
+import { isLevelFilter, type LevelFilter, type MasteryFilter, type Tier, type Word } from "./types";
 
 export interface ListCriteria {
   level: LevelFilter;
@@ -25,8 +17,6 @@ export interface ListCriteria {
    * 需要的是后者，而这一档横跨 A1–C1（比如 C1 里有 genocide 也有 abuse）。
    */
   tier: TierFilter;
-  /** CEFR 筛选："all" 不过滤；否则只留该难度（词条级，取首义） */
-  cefr: CefrFilter;
   /**
    * 牛津官方词表筛选："all" 不过滤；
    * "ox3000"/"ox5000" 只留官方标记的词；"none" 只看不在官方表里的词。
@@ -48,10 +38,6 @@ const TIER_FILTERS: readonly TierFilter[] = ["all", "core", "extended"];
 /** 档位筛选值；"all" 不过滤 */
 export type TierFilter = "all" | Tier;
 
-/** CEFR 筛选值；"all" 不过滤 */
-export type CefrFilter = "all" | Cefr;
-const CEFR_FILTERS: readonly CefrFilter[] = ["all", ...CEFR_LEVELS];
-
 /** 牛津官方词表筛选值 */
 export type OxfordFilter = "all" | "ox3000" | "ox5000" | "none";
 const OXFORD_FILTERS: readonly OxfordFilter[] = ["all", "ox3000", "ox5000", "none"];
@@ -59,7 +45,7 @@ const OXFORD_FILTERS: readonly OxfordFilter[] = ["all", "ox3000", "ox5000", "non
 const MAX_QUERY = 80;
 
 export function defaultListView(level: LevelFilter): ListView {
-  return { level, mode: "all", tier: "all", cefr: "all", oxford: "all", query: "", page: 1 };
+  return { level, mode: "all", tier: "all", oxford: "all", query: "", page: 1 };
 }
 
 /**
@@ -77,9 +63,6 @@ export function parseListView(raw: unknown, fallbackLevel: LevelFilter): ListVie
   const tier = TIER_FILTERS.includes(input.tier as TierFilter)
     ? (input.tier as TierFilter)
     : base.tier;
-  const cefr = CEFR_FILTERS.includes(input.cefr as CefrFilter)
-    ? (input.cefr as CefrFilter)
-    : base.cefr;
   const oxford = OXFORD_FILTERS.includes(input.oxford as OxfordFilter)
     ? (input.oxford as OxfordFilter)
     : base.oxford;
@@ -88,7 +71,7 @@ export function parseListView(raw: unknown, fallbackLevel: LevelFilter): ListVie
     typeof input.page === "number" && Number.isFinite(input.page) && input.page >= 1
       ? Math.floor(input.page)
       : base.page;
-  return { level, mode, tier, cefr, oxford, query, page };
+  return { level, mode, tier, oxford, query, page };
 }
 
 /** 读回上次的视图；隐私模式下 localStorage 会抛，读不到就当第一次来 */
@@ -132,7 +115,6 @@ export function filterWords(
   const keyword = criteria.query.trim().toLowerCase();
   let source: readonly Word[] = words;
   if (criteria.tier !== "all") source = source.filter((w) => w.tier === criteria.tier);
-  if (criteria.cefr !== "all") source = source.filter((w) => w.cefr === criteria.cefr);
   if (criteria.oxford === "ox3000") source = source.filter((w) => w.ox3000);
   else if (criteria.oxford === "ox5000") source = source.filter((w) => w.ox5000);
   else if (criteria.oxford === "none") source = source.filter((w) => !w.ox3000 && !w.ox5000);

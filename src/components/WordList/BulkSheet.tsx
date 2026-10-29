@@ -95,8 +95,8 @@ export function BulkSheet({
         className={cn(
           "fixed z-30 flex h-[52px] w-[52px] items-center justify-center rounded-full border shadow-float select-none",
           "transition-[background-color,border-color,transform] duration-100",
-          // 没拖过时：移动端浮在底部导航之上，桌面端抬高避开学面板胶囊
-          "bottom-[calc(56px+env(safe-area-inset-bottom)+12px)] right-4 lg:bottom-24 lg:right-6",
+          // 没拖过时：浮在分页条之上（约 56px），桌面端抬高避开学面板胶囊
+          "bottom-[calc(68px+env(safe-area-inset-bottom))] right-4 lg:bottom-24 lg:right-6",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-paper",
           fab.dragging && "scale-105 cursor-grabbing",
           nothingSelected

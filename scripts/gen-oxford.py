@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-从牛津义项数据生成 src/data/cefr.json（词条级 + 义项级 CEFR 分级）。
+从牛津义项数据生成 src/data/oxford.json（牛津官方 Oxford 3000 / 5000 标记）。
 
 输入：data/oxford/senses.json.gz（已入库的权威快照，不需要联网）
-输出：src/data/cefr.json
+输出：src/data/oxford.json
 
 为什么这个文件必须入库：
   src/data/*.json 里的 A1..C1 是构建时从 data/*.js 转出来的派生物，可以忽略；
-  但 cefr.json 的源数据是牛津抓取结果，重新生成需要联网 25 分钟。
-  它是「构建输入」而不是「构建产物」，不入库就等于换台机器就丢分级。
+  但 oxford.json 的源数据是牛津抓取结果，重新生成需要联网 25 分钟。
+  它是「构建输入」而不是「构建产物」，不入库就等于换台机器就丢标记。
 
-字段口径：
-  cefr       词条级难度 = 首义（该词性下最常用义）的 CEFR
-  senses     每个义项各自的 CEFR，与 data/*.js 释义里的 `；` 分段一一对应
+字段口径（v2 起只留这两个）：
   ox3000     牛津官方 Oxford 3000 标记
   ox5000     牛津官方 Oxford 5000 标记
 
+历史上的 cefr / senses 两个字段（词条级与义项级 CEFR）已随「难度」筛选一起移除：
+  那个维度与词表自带的 A1–C1 等级在 5323 条里 5280 条完全一致，等于同一个轴做了两遍。
+
 用法：
-  python3 scripts/gen-cefr.py
+  python3 scripts/gen-oxford.py
 """
 import gzip, json, os, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OXFORD = os.path.join(ROOT, "data", "oxford", "senses.json.gz")
-OUT = os.path.join(ROOT, "src", "data", "cefr.json")
+OUT = os.path.join(ROOT, "src", "data", "oxford.json")
 LEVELS = ["A1", "A2", "B1", "B2", "C1"]
 
 
@@ -98,23 +99,20 @@ def main():
         segments = len([p for p in e["cn"].split("；") if p.strip()])
         picked = picked[: max(segments, 1)]
         key = f'{e["level"]}|{e["word"]}|{e["pos"]}'
-        index[key] = {
-            "cefr": picked[0].get("cefr", "") if picked else "",
-            "senses": [s.get("cefr", "") for s in picked],
-            "ox3000": any(s.get("ox3000") for s in senses),
-            "ox5000": any(s.get("ox5000") for s in senses),
-        }
+        flags = {}
+        if any(s.get("ox3000") for s in senses):
+            flags["ox3000"] = True
+        if any(s.get("ox5000") for s in senses):
+            flags["ox5000"] = True
+        index[key] = flags
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(index, f, ensure_ascii=False, separators=(",", ":"))
 
-    from collections import Counter
-    c = Counter(v["cefr"] or "none" for v in index.values())
     print(f"已写入 {OUT}：{len(index)} 条，{os.path.getsize(OUT)/1024:.1f} KB")
-    print(f"  词条级 CEFR: {dict(c)}")
-    print(f"  ox3000 {sum(1 for v in index.values() if v['ox3000'])}  "
-          f"ox5000 {sum(1 for v in index.values() if v['ox5000'])}")
+    print(f"  ox3000 {sum(1 for v in index.values() if v.get('ox3000'))}  "
+          f"ox5000 {sum(1 for v in index.values() if v.get('ox5000'))}")
 
 
 if __name__ == "__main__":

@@ -10,15 +10,15 @@ dev-dist/
 #
 # 1. data/*.js        词条数据，手工维护，入库
 # 2. data/oxford/     牛津抓取快照 + 缓存
-#    - senses.json.gz  入库：cefr/tiers 的生成输入，重抓需联网 25 分钟
+#    - senses.json.gz  入库：oxford/tiers 的生成输入，重抓需联网 25 分钟
 #    - .cache.json     忽略：抓取中间产物，5MB，每次抓取都变
 # 3. src/data/        构建输入/产物
 #    - A1..C1.json     忽略：由 data/*.js 转出，npm run data 可重建
-#    - cefr.json       入库：源数据是牛津快照，重建依赖上面的 gz
+#    - oxford.json     入库：源数据是牛津快照，重建依赖上面的 gz
 #    - tiers.json      入库：重建依赖 63MB 外部词典（ECDICT）
 
 data/oxford/.cache.json
 
 src/data/*.json
-!src/data/cefr.json
+!src/data/oxford.json
 !src/data/tiers.json

@@ -49,32 +49,9 @@ export interface Word {
    * burden 这类新闻口语高频词，按等级一刀切会把后者一起干掉。
    */
   tier: Tier;
-  /**
-   * 词条级 CEFR（取首义 = 最常用义的难度）。空串 = 牛津未标。
-   * 用于按难度筛词。
-   */
-  cefr: Cefr | "";
-  /** 每个义项各自的 CEFR，与 cn 里的 `；` 分段一一对应；牛津未标处为空串 */
-  senseCefr: readonly (Cefr | "")[];
   /** 牛津官方 Oxford 3000 / 5000 标记 */
   ox3000: boolean;
   ox5000: boolean;
-}
-
-/**
- * 牛津 CEFR 分级（义项级）。
- *
- * 与项目自身的 A1–C1 标签不是同一套口径：
- *   - 项目标签是「整词难度」，来自旧数据，一个词只有一个值
- *   - CEFR 是「义项难度」，同一个词的不同义项可以跨 4 级
- *     例：above 的「在上方」是 a1，「自视过高」是 c2
- */
-export type Cefr = "a1" | "a2" | "b1" | "b2" | "c1" | "c2";
-
-export const CEFR_LEVELS: readonly Cefr[] = ["a1", "a2", "b1", "b2", "c1", "c2"];
-
-export function isCefr(value: unknown): value is Cefr {
-  return typeof value === "string" && (CEFR_LEVELS as readonly string[]).includes(value);
 }
 
 export type Tier = "core" | "extended";

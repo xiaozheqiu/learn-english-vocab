@@ -72,6 +72,29 @@ try {
   await masteryBtn.click();
   await page.waitForTimeout(200);
 
+  /*
+   * 「难度（CEFR）」筛选已移除：它和等级在 5323 条里 5280 条完全一致，
+   * 等于同一个轴做了两遍。这组断言盯住它不得回到抽屉里。
+   */
+  await openFilter(page);
+  report.check(
+    "filter.noCefrAxis",
+    (await page.locator('[data-testid="filter-cefr"]').count()) === 0 &&
+      !(await nav.dialog(page).innerText()).includes("CEFR"),
+  );
+  const filterSections = await page
+    .locator('[role="dialog"] [data-testid^="filter-"]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
+  report.check(
+    "filter.sectionsAreLevelTierOxfordModeSize",
+    ["filter-level", "filter-tier", "filter-oxford", "filter-mode", "filter-size"].every((id) =>
+      filterSections.includes(id),
+    ),
+    filterSections.join(","),
+  );
+  await page.keyboard.press("Escape");
+  await waitDialogClosed(page);
+
   /* ── 3. 筛选（抽屉，确定后才生效）────────────────────────── */
   const filterBar = page.locator('section[aria-label="词表筛选"]');
   const barHeightBefore = (await filterBar.boundingBox()).height;
