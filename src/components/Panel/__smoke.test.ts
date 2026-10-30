@@ -62,15 +62,11 @@ describe("面板分区（§2.3）", () => {
         prefs: DEFAULT_PREFS,
         setPrefs: async () => {},
         update: {
-          needRefresh: false,
-          applying: false,
-          stuck: false,
+          reloading: false,
           checking: false,
           checkResult: "idle" as const,
           lastCheckedAt: null,
           check: () => checked.push("check"),
-          applyUpdate: () => {},
-          forceReload: () => {},
         },
       }),
     );
@@ -87,15 +83,11 @@ describe("面板分区（§2.3）", () => {
         prefs: DEFAULT_PREFS,
         setPrefs: async () => {},
         update: {
-          needRefresh: false,
-          applying: false,
-          stuck: false,
+          reloading: false,
           checking: false,
           checkResult: "latest" as const,
           lastCheckedAt: Date.parse("2026-10-30T08:00:00Z"),
           check: () => {},
-          applyUpdate: () => {},
-          forceReload: () => {},
         },
       }),
     );

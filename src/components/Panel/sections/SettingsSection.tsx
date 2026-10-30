@@ -20,7 +20,7 @@ const levelOptions: { value: LevelFilter; label: string }[] = [
 /** 手动检查的结论文案；checking 由按钮自己表达，这里只处理终态 */
 function resultText(result: CheckResult, lastCheckedAt: number | null): string | null {
   if (result === "latest") return "已经是最新版本";
-  if (result === "found") return "发现新版本，正在准备更新…";
+  if (result === "found") return "发现新版本，正在自动更新…";
   if (result === "unsupported") return "当前环境不支持版本检查（未注册 Service Worker）";
   if (result === "error") return "检查失败，可能没联网，稍后再试";
   if (lastCheckedAt) {
@@ -121,7 +121,7 @@ export function SettingsSection({ prefs, setPrefs, update }: SettingsSectionProp
             aria-live="polite"
             data-testid="check-update-status"
           >
-            {hint ?? "发现新版本会自动提示并要求更新，这里只是手动催一次。"}
+            {hint ?? "有新版本会自动更新并刷新页面；这里只是手动催一次检查。"}
           </p>
         </section>
       )}

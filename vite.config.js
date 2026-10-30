@@ -51,11 +51,18 @@ export default defineConfig(({ command }) => {
       react(),
       VitePWA({
         /**
-         * prompt：新 SW 装好后停在 waiting，由页面决定何时接管。
-         * autoUpdate 会自己 skipWaiting + clientsClaim 直接顶掉旧壳，
-         * 那样「发现新版本 → 手动更新」这条链路根本不存在（没有 waiting 可提示）。
+         * autoUpdate：新版装好即接管，页面自动重载 —— 强制更新，没有「稍后」。
+         *
+         * 这个项目的更新是数据契约级别的（裁字段、改主键、改搜索口径），
+         * 让用户留在旧壳上有实际后果；而「提示 → 用户点确认」那条链路已经
+         * 被证明可以被无限推掉。所以选择物理上不留旧版。
+         *
+         * 插件在此模式下会自动置 workbox.skipWaiting = true 与
+         * clientsClaim = true（见 vite-plugin-pwa 的 registerType === "autoUpdate"
+         * 分支，只在 injectRegister 为 auto/null 时生效 —— 这里不覆盖它），
+         * 客户端注册代码则在 activated 且 isUpdate 时直接 location.reload()。
          */
-        registerType: "prompt",
+        registerType: "autoUpdate",
         devOptions: { enabled: false },
         includeAssets: ["icons/favicon-32.png", "icons/apple-touch-icon.png"],
         manifest: {
@@ -87,12 +94,15 @@ export default defineConfig(({ command }) => {
           navigateFallback: "index.html",
           cleanupOutdatedCaches: true,
           /**
-           * clientsClaim 必须显式打开。
-           * registerType: "prompt" 时插件不再自动加，首次安装的新 SW 会停在
-           * activated 却不接管页面（navigator.serviceWorker.controller === null），
-           * 要等用户关掉重开才生效 —— 首次安装后就断网会直接白屏。
-           * 它和 skipWaiting 是两件事：这里只让「首次安装」立即接管，
-           * 「已有旧版」的更新仍然停在 waiting 等用户点。 */
+           * 两项都显式写出来（autoUpdate 下插件默认也会加，但依赖默认值太脆）：
+           * - skipWaiting：新 SW 装好立刻进 activated，不停在 waiting
+           * - clientsClaim：激活后立即接管现有页面，不用等用户关掉重开
+           *
+           * 两者合起来才是「强制更新」：旧壳没有机会继续跑。代价是刷新是
+           * 无预告的 —— 首屏刚渲染完也可能撞上一次重载，所以词表视图状态
+           * 持久化在 localStorage，刷新后筛选、页码、滚动位置都还原。
+           */
+          skipWaiting: true,
           clientsClaim: true,
         },
       }),

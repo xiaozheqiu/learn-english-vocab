@@ -1,19 +1,24 @@
 /**
- * PWA 版本更新：前台时主动检查，发现新版本后**强制**让用户更新。
+ * PWA 版本更新：强制更新 —— 新版装好即接管，页面自己刷新，没有「稍后」。
  *
- * 「当前可见页面」这个钩子在小程序里是 onShow，Web 里等价的是
- * Page Visibility API —— 独立窗口从后台切回来只触发 visibilitychange，
- * 不会触发 focus，所以两个都监听，成本极低。
+ * 为什么是强制而不是提示：
+ * 这个应用的更新是数据契约级别的（裁字段、改主键、改搜索口径），让用户留在
+ * 旧壳上有实际后果。而「发现新版 → 弹框 → 用户点确认」那条链路已经被证明
+ * 可以被无限推掉（上一版给了「稍后」，点掉即继续用旧代码）。所以选物理上
+ * 不留旧版：vite.config.js 里 registerType 是 "autoUpdate"，workbox 的
+ * skipWaiting / clientsClaim 都开着，新 SW 装好立刻激活并接管。
  *
- * 前提：vite.config.js 的 registerType 必须是 "prompt"。
- * autoUpdate 会让新 SW 直接 skipWaiting + clientsClaim 顶掉旧壳，
- * 根本没有 waiting 状态，也就没有「发现新版本」这件事可以弹。
+ * 重要（vite-plugin-pwa 2.x 的实际行为，别按直觉写）：
+ * autoUpdate 模式下 onNeedRefresh 根本不会被调用，needRefresh 恒为 false，
+ * updateServiceWorker() 也是空操作（它内部是 `if (!auto) sendSkipWaitingMessage()`）。
+ * 唯一可用的接管点是 onNeedReload —— 插件在 activated 且 isUpdate 时调它，
+ * 否则自己直接 location.reload()。这里劫持它，只为了在重载前先画一帧
+ * 「正在更新」，不然用户会以为页面崩了。
  *
- * 为什么不再给「稍后」：
- * needRefresh 为真意味着新 SW 已经**下载完成并在 waiting**，旧壳和旧分包仍在跑。
- * 让用户点掉提示继续用，等于默许他留在已知的旧版本上 —— 上一版删字段、改主键
- * 这类改动就是靠这个提示落地的，能关掉就等于可以一直不落地。
- * 所以提示是阻塞的，只有「立即更新」一条路。
+ * 前后台切换这个钩子在小程序里是 onShow，Web 里等价的是 Page Visibility API ——
+ * 独立窗口从后台切回来只触发 visibilitychange，不触发 focus，所以两个都监听。
+ * 它是「始终跑最新版」的保证：浏览器只在导航时主动查 sw.js，
+ * 长时间挂着不动的标签页得靠这里催。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
@@ -22,32 +27,19 @@ import { useRegisterSW } from "virtual:pwa-register/react";
 const CHECK_INTERVAL_MS = 30_000;
 
 /**
- * 手动检查时等「安装完成」的上限。
+ * 手动检查时等「有没有新 SW 开始安装」的上限。
  *
- * reg.update() 只保证「检查过」，新 SW 可能还在 installing。要给出
- * 「已是最新」还是「发现新版」的结论，必须等它落到 waiting 或 retired。
+ * reg.update() 只保证「检查过」。要区分「已是最新」和「发现了新版」，
+ * 得等浏览器触发 updatefound —— 正常几百毫秒内就到，4 秒是留给慢网的余量。
  */
 const MANUAL_WAIT_MS = 4_000;
-
-/**
- * 点了「立即更新」之后，如果控制器迟迟没换过来，就认定卡住了。
- *
- * SW 激活本身是本地操作，正常几十毫秒内就该完成。超过这个时间说明
- * 这台浏览器上的接管流程出了问题（Safari 偶发），必须给一条出路，
- * 否则阻塞式弹框会把用户彻底锁死在旧页面上。
- */
-const APPLY_STUCK_MS = 8_000;
 
 /** 手动检查的结论；"checking" 是进行中 */
 export type CheckResult = "idle" | "checking" | "latest" | "found" | "unsupported" | "error";
 
 export interface PwaUpdate {
-  /** 新版本已下载完成、正在 waiting。为真时提示不可关闭 */
-  needRefresh: boolean;
-  /** 「立即更新」已按下，等页面重载 */
-  applying: boolean;
-  /** 按下更新后迟迟没接管，提示用户手动刷新 */
-  stuck: boolean;
+  /** 已确定要换到新版，正在重载（用来先画一帧提示，避免像崩溃） */
+  reloading: boolean;
   /** 手动检查是否在进行中 */
   checking: boolean;
   /** 手动检查的结论 */
@@ -56,53 +48,30 @@ export interface PwaUpdate {
   lastCheckedAt: number | null;
   /** 用户手动触发检查（绕过自动检查的节流） */
   check: () => void;
-  /** 让 waiting 的 SW 接管 */
-  applyUpdate: () => void;
-  /** 卡住时的出路：硬刷一次 */
-  forceReload: () => void;
-}
-
-/**
- * 等 registration 落到 waiting（或判定没有新版）。
- * 已有 waiting 直接返回；正在 installing 就监听 statechange。
- */
-function waitForUpdateReady(reg: ServiceWorkerRegistration, timeoutMs: number): Promise<boolean> {
-  if (reg.waiting) return Promise.resolve(true);
-  const installing = reg.installing;
-  if (!installing || timeoutMs <= 0) return Promise.resolve(false);
-
-  return new Promise((resolve) => {
-    const finish = (value: boolean) => {
-      clearTimeout(timer);
-      installing.removeEventListener("statechange", onState);
-      resolve(value);
-    };
-    const onState = () => {
-      if (installing.state === "installed") finish(true);
-      else if (installing.state === "redundant") finish(false);
-    };
-    const timer = setTimeout(() => finish(Boolean(reg.waiting)), timeoutMs);
-    installing.addEventListener("statechange", onState);
-  });
 }
 
 export function usePwaUpdate(): PwaUpdate {
   const registration = useRef<ServiceWorkerRegistration | undefined>(undefined);
   const lastCheck = useRef(0);
-  const lastCheckedAt = useRef<number | null>(null);
-  const [checkResult, setCheckResult] = useState<CheckResult>("idle");
+  const [reloading, setReloading] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [stuck, setStuck] = useState(false);
-  /** 「立即更新」已经按下的标记：只有这时 controllerchange 才该重载页面 */
-  const applyingRef = useRef(false);
-  const reloaded = useRef(false);
+  const [checkResult, setCheckResult] = useState<CheckResult>("idle");
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
 
-  const {
-    needRefresh: [needRefresh],
-    updateServiceWorker,
-  } = useRegisterSW({
+  /**
+   * 劫持插件的自动重载，只为了先让「正在更新」画出来。
+   *
+   * 双 rAF 是必须的：单次 setState 之后立刻 reload，React 还没来得及提交、
+   * 浏览器也没绘制，用户看到的就是一次白屏闪烁。等两帧再走，遮罩已经上屏。
+   */
+  const onNeedReload = useCallback(() => {
+    setReloading(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => window.location.reload()));
+  }, []);
+
+  useRegisterSW({
     immediate: true,
+    onNeedReload,
     onRegisteredSW(_swUrl, reg) {
       registration.current = reg;
     },
@@ -111,9 +80,9 @@ export function usePwaUpdate(): PwaUpdate {
   /**
    * 问一次浏览器「有没有新版 SW」。
    *
-   * silent：自动检查，不污染手动检查的结论展示。
-   * 手动检查不看 CHECK_INTERVAL_MS 节流 —— 用户按了按钮就该真发请求，
-   * 被 30 秒节流挡掉的表现是「点了没反应」。
+   * silent：自动检查，受 CHECK_INTERVAL_MS 节流，也不改结论展示。
+   * 手动检查不吃节流 —— 用户按了按钮就该真发请求，被 30 秒节流挡掉的
+   * 表现是「点了没反应」。
    */
   const runCheck = useCallback(async (silent: boolean) => {
     const reg = registration.current;
@@ -136,24 +105,39 @@ export function usePwaUpdate(): PwaUpdate {
 
     setChecking(true);
     setCheckResult("checking");
+
+    /**
+     * 用 updatefound 判断「有没有新版」，不能等 waiting ——
+     * autoUpdate 下新 SW 装好就立刻活化，waiting 这个状态根本不存在。
+     */
+    let sawUpdate = false;
+    const onUpdateFound = () => {
+      sawUpdate = true;
+    };
+    reg.addEventListener("updatefound", onUpdateFound);
+
     try {
       await reg.update();
     } catch {
+      reg.removeEventListener("updatefound", onUpdateFound);
       setChecking(false);
       setCheckResult("error");
       return;
     }
-    const found = await waitForUpdateReady(reg, MANUAL_WAIT_MS);
+
+    // 没立刻看到 updatefound 就给慢网留一会儿；看到了就不必再等
+    if (!sawUpdate) {
+      await new Promise((resolve) => setTimeout(resolve, MANUAL_WAIT_MS));
+    }
+    reg.removeEventListener("updatefound", onUpdateFound);
+
     lastCheck.current = Date.now();
-    lastCheckedAt.current = Date.now();
+    setLastCheckedAt(Date.now());
     setChecking(false);
-    setCheckResult(found ? "found" : "latest");
+    setCheckResult(sawUpdate ? "found" : "latest");
   }, []);
 
-  const check = useCallback(() => {
-    void runCheck(false);
-  }, [runCheck]);
-
+  /** 自动检查：切回前台就催一次，保证长时间挂着的标签页也会换到新版 */
   useEffect(() => {
     const onForeground = () => {
       if (document.visibilityState === "visible") void runCheck(true);
@@ -166,57 +150,9 @@ export function usePwaUpdate(): PwaUpdate {
     };
   }, [runCheck]);
 
-  /**
-   * 自己接管「点完更新后重载页面」，不能指望 workbox-window。
-   *
-   * 它的 deciding 逻辑是 `isUpdate = Boolean(controller)`，而这个值在
-   * register() 那一刻就固化了。本次会话如果是**首次安装**（打开时还没有
-   * controller），后续任何一次接管都会被判成「非更新」，于是它只发
-   * controllerchange 不重载 —— 真机上表现为：点了立即更新，新 SW 已
-   * activated，页面却还是旧版，弹框也挂着不走。
-   *
-   * 所以：只有用户按过「立即更新」才重载，且只重载一次。
-   * 首次安装时的自动接管（clientsClaim）不会重载，那是期望行为。
-   */
-  useEffect(() => {
-    if (!("serviceWorker" in navigator)) return;
-    const onControllerChange = () => {
-      if (!applyingRef.current || reloaded.current) return;
-      reloaded.current = true;
-      window.location.reload();
-    };
-    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
-    return () =>
-      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
-  }, []);
+  const check = useCallback(() => {
+    void runCheck(false);
+  }, [runCheck]);
 
-  /** 按下更新后开始计时，迟迟不接管就露出手动刷新这条出路 */
-  useEffect(() => {
-    if (!applying) return;
-    const timer = setTimeout(() => setStuck(true), APPLY_STUCK_MS);
-    return () => clearTimeout(timer);
-  }, [applying]);
-
-  const applyUpdate = useCallback(() => {
-    applyingRef.current = true;
-    setApplying(true);
-    // 参数在 0.13.2+ 已废弃；重载由上面的 controllerchange 兜底
-    void updateServiceWorker(true);
-  }, [updateServiceWorker]);
-
-  const forceReload = useCallback(() => {
-    window.location.reload();
-  }, []);
-
-  return {
-    needRefresh,
-    applying,
-    stuck,
-    checking,
-    checkResult,
-    lastCheckedAt: lastCheckedAt.current,
-    check,
-    applyUpdate,
-    forceReload,
-  };
+  return { reloading, checking, checkResult, lastCheckedAt, check };
 }

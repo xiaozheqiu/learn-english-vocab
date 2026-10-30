@@ -1,15 +1,16 @@
 /**
- * PWA 更新链路回归：前台检查 → 发现新版本 → 弹框 → 手动更新 → 页面变新。
+ * PWA 更新链路回归：前台检查 → 发现新版本 → 自动接管 → 页面自己变新。
  *
  * 这条链路没法用单测覆盖：registerType 的 waiting 语义、workbox-window 的
  * controlling 事件、以及 SW 换了之后页面是否真的重载，全都在浏览器里才成立。
  *
  * 做法：同一个端口上跑一个可切换根目录的静态服务器。
  *   1. 打开构建 A，等 SW 接管并走完首次设置；
- *   2. 把服务器根目录换成构建 B（sw.js 内容不同 → 浏览器认为是新版）；
- *   3. 触发 visibilitychange（等价于用户从后台切回 App）；
- *   4. 断言弹框出现且**关不掉**（无「稍后」、Esc 与点遮罩都无效）；
- *   5. 点「立即更新」，断言页面重载并变成构建 B 的内容。
+ *   2. 手动点「检查更新」，断言没有新版时报「已经是最新版本」；
+ *   3. 把服务器根目录换成构建 B（sw.js 内容不同 → 浏览器认为是新版）；
+ *   4. 触发 visibilitychange（等价于用户从后台切回 App）；
+ *   5. 断言页面**自己**换成了构建 B —— 没有按钮可点、没有确认可给，
+ *      这是强制更新的核心判据。
  *
  * 用法：node e2e/pwa-update.mjs
  * 前置：dist/ 已构建（npm run build）。两个夹具由脚本自己从 dist 复制生成。
@@ -19,7 +20,7 @@ import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { chromium } from "playwright";
-import { createReport, waitMainShell, VIEWPORTS } from "./lib/harness.mjs";
+import { createReport, waitDialogClosed, waitMainShell, VIEWPORTS } from "./lib/harness.mjs";
 
 const BASE_PATH = "/learn-english-vocab/";
 const PORT = Number(process.env.PWA_PORT ?? 4178);
@@ -143,76 +144,80 @@ try {
   const dialogBefore = await page.locator('[role="dialog"]').count();
   report.check("update.silentWhenNoUpdate", dialogBefore === 0, `dialog=${dialogBefore}`);
 
-  /* ── 2. 服务器换到构建 B ───────────────────────────────── */
+  /* ── 2. 服务器换到构建 B：模拟「切回前台」自动检查 ─────── */
+  /*
+   * 必须先做这一步再做手动检查：手动检查会把 lastCheck 推到当下，
+   * 30 秒节流内的自动检查就变成 no-op，测不到自动更新。
+   */
   await writeFile(pointerFile, dirB);
-
-  /* ── 3. 模拟「用户切回前台」 ───────────────────────────── */
   await page.evaluate(() => {
     document.dispatchEvent(new Event("visibilitychange"));
     window.dispatchEvent(new Event("focus"));
   });
 
-  /* ── 4. 弹框应当出现 ──────────────────────────────────── */
-  const dialog = page.locator('[role="dialog"]');
-  const appeared = await dialog
-    .waitFor({ state: "visible", timeout: 15000 })
+  /*
+   * ── 3. 强制更新：没有任何可点的东西，页面自己换掉 ────────
+   *
+   * 等待条件只能是「标题变了」，不能等按钮 —— autoUpdate 下不存在等待
+   * 用户确认的 waiting 状态，插件在 activated 时直接 location.reload()。
+   * 这一条就是「强制」的核心判据。
+   */
+  const becameNew = await page
+    .waitForFunction((prev) => document.title !== prev, titleA, { timeout: 30000 })
     .then(() => true)
     .catch(() => false);
-  report.check("update.promptAppears", appeared);
+  report.check("update.autoReloadsWithoutPrompt", becameNew);
 
-  if (appeared) {
-    const text = (await dialog.innerText()).replace(/\s+/g, " ").trim();
-    report.note("dialogText", text);
-    report.check(
-      "update.hasApplyButton",
-      await dialog.getByRole("button", { name: "立即更新" }).isVisible(),
-    );
+  const titleB = await page.title();
+  report.note("titleB", titleB);
+  report.check("update.pageBecameNew", titleB !== titleA, `${titleA} \u2192 ${titleB}`);
 
-    /*
-     * 提示是阻塞的：没有「稍后」，也关不掉。
-     * 新版已经下载完停在 waiting，允许关掉等于默许用户继续跑旧代码。
-     */
-    report.check(
-      "update.hasNoLaterButton",
-      (await dialog.getByRole("button", { name: "稍后" }).count()) === 0,
-    );
-    report.check(
-      "update.hasNoCloseButton",
-      (await dialog.getByRole("button", { name: "关闭" }).count()) === 0,
-    );
-    report.check(
-      "update.focusOnApplyButton",
-      (await page.evaluate(() => document.activeElement?.textContent?.trim())) === "立即更新",
-    );
+  const reloaded = await page
+    .waitForFunction(() => Boolean(navigator.serviceWorker.controller), null, { timeout: 15000 })
+    .then(() => true)
+    .catch(() => false);
+  report.check("update.afterReloadControlled", reloaded);
 
-    /* ── 4.5 关不掉：Esc / 点遮罩都不得让弹框消失 ─────────── */
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(400);
-    report.check("update.escDoesNotClose", (await dialog.count()) === 1);
-    await page.mouse.click(4, 4); // 点遮罩区域（左上角）
-    await page.waitForTimeout(400);
-    report.check("update.overlayClickDoesNotClose", (await dialog.count()) === 1);
-    report.check("update.stillOldPageWhileBlocked", (await page.title()) === titleA);
+  /*
+   * 重载后不该留任何需要用户处理的更新界面。
+   * 这是「强制」的另一半：没有稍后、没有立即更新、没有关不掉的框。
+   */
+  await waitMainShell(page);
+  const dialogAfter = await page.locator('[role="dialog"]').count();
+  report.check("update.noBlockingPromptLeft", dialogAfter === 0, `dialog=${dialogAfter}`);
+  report.check(
+    "update.noApplyOrLaterButtons",
+    (await page.getByRole("button", { name: /立即更新|稍后/ }).count()) === 0,
+  );
 
-    /* ── 5. 点「立即更新」→ 重载 → 内容变新 ──────────────── */
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "load", timeout: 20000 }).catch(() => null),
-      page.locator('[role="dialog"]').getByRole("button", { name: "立即更新" }).click(),
-    ]);
+  /* ── 4. 手动检查：已经在新版上时必须给「已经是最新版本」 ── */
+  await page.locator('button[aria-label="打开学习面板"]').click();
+  await page.getByRole("tab").filter({ hasText: /设置/ }).click();
+  const checkBtn = page.locator('[data-testid="check-update"]');
+  report.check("settings.hasCheckUpdate", await checkBtn.isVisible());
 
-    const reloaded = await page
-      .waitForFunction(() => Boolean(navigator.serviceWorker.controller), null, { timeout: 15000 })
-      .then(() => true)
-      .catch(() => false);
-    report.check("update.afterApplyControlled", reloaded);
+  await checkBtn.click();
+  await page
+    .waitForFunction(
+      () => {
+        const t = document.querySelector('[data-testid="check-update-status"]')?.textContent ?? "";
+        return t.includes("最新") || t.includes("失败");
+      },
+      null,
+      { timeout: 20000 },
+    )
+    .catch(() => null);
+  const statusLatest = (
+    await page.locator('[data-testid="check-update-status"]').innerText()
+  ).trim();
+  report.note("statusNoUpdate", statusLatest);
+  report.check("settings.reportsLatest", statusLatest.includes("已经是最新版本"), statusLatest);
 
-    const titleB = await page.title();
-    report.note("titleB", titleB);
-    report.check("update.pageBecameNew", titleB !== titleA, `${titleA} → ${titleB}`);
+  await page.keyboard.press("Escape");
+  await waitDialogClosed(page);
 
-    const dialogAfter = await page.locator('[role="dialog"]').count();
-    report.check("update.dialogGoneAfterApply", dialogAfter === 0, `dialog=${dialogAfter}`);
-  }
+  /* ── 5. 换新版后仍然可用：词表渲染出来、掌握标记能落地 ─── */
+  report.check("update.listStillWorks", (await page.locator('[role="row"][data-key]').count()) > 0);
 } finally {
   await context.close().catch(() => undefined);
   await browser.close().catch(() => undefined);
