@@ -122,9 +122,7 @@ export function filterWords(
     source = source.filter((w) => w.level === criteria.level);
   }
   if (keyword) {
-    source = source.filter(
-      (w) => w.word.toLowerCase().includes(keyword) || w.cn.toLowerCase().includes(keyword),
-    );
+    source = source.filter((w) => w.word.toLowerCase().includes(keyword));
   }
   if (criteria.mode === "todo") return source.filter((w) => !mastered.has(w.key));
   if (criteria.mode === "done") return source.filter((w) => mastered.has(w.key));

@@ -60,7 +60,7 @@ export function AboutSection({ onOpenGuide }: AboutSectionProps) {
         <ul className="mt-1 space-y-1 text-[12px] leading-5 text-ink-soft">
           <li className="tnum">Oxford 5000 词表，共 5323 条，覆盖 A1–C1 五个等级</li>
           <li>词性与中文释义取自词表原数据，未做改写</li>
-          <li>词表只显示单词与词性，点单词跳三方词典看释义；释义同时参与搜索</li>
+          <li>词表只显示单词与词性；释义不展示、也不参与搜索，点单词跳三方词典查</li>
           <li>已掌握标记与偏好全部保存在本机浏览器，不上传、无服务端</li>
         </ul>
       </section>

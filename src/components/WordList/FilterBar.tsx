@@ -150,7 +150,7 @@ export function FilterBar({
             aria-hidden="true"
           />
           <label className="sr-only" htmlFor="word-search">
-            搜索单词或释义
+            搜索单词
           </label>
           <Input
             id="word-search"
@@ -158,7 +158,7 @@ export function FilterBar({
             type="search"
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            placeholder="搜索单词或释义"
+            placeholder="搜索单词"
             className="h-9 pl-9 pr-9"
           />
           {query && (

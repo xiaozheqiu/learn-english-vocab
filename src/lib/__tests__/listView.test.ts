@@ -99,10 +99,10 @@ describe("词表过滤", () => {
     expect(rows.map((r) => r.level)).toEqual(["A1", "B2"]);
   });
 
-  it("搜索同时匹配释义", () => {
-    const rows = filterWords(WORDS, { ...ALL, query: "遗弃" }, masteredOf([]));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.level).toBe("B2");
+  it("搜索只认单词，不匹配释义", () => {
+    // 释义不在列表里显示，也没有理由再把中文当搜索入口：
+    // 搜「遗弃」不该把 abandon 捞出来，否则用户会以为这是查词能力
+    expect(filterWords(WORDS, { ...ALL, query: "遗弃" }, masteredOf([]))).toHaveLength(0);
   });
 
   it("搜索大小写不敏感，首尾空格忽略", () => {
