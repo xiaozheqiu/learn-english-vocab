@@ -55,6 +55,53 @@ describe("面板分区（§2.3）", () => {
     expect(html).not.toContain("PIN");
   });
 
+  it("设置分区带版本检查入口，且不拦着用户自己催一次", () => {
+    const checked: string[] = [];
+    const html = render(
+      createElement(SettingsSection, {
+        prefs: DEFAULT_PREFS,
+        setPrefs: async () => {},
+        update: {
+          needRefresh: false,
+          applying: false,
+          stuck: false,
+          checking: false,
+          checkResult: "idle" as const,
+          lastCheckedAt: null,
+          check: () => checked.push("check"),
+          applyUpdate: () => {},
+          forceReload: () => {},
+        },
+      }),
+    );
+    expect(html).toContain("检查更新");
+    expect(html).toContain('data-testid="check-update"');
+    expect(html).toContain('data-testid="check-update-status"');
+    // 没查过时不该编一个「上次检查」出来
+    expect(html).not.toContain("上次检查");
+  });
+
+  it("检查出「已是最新」时给出明确结论，而不是只说在检查", () => {
+    const html = render(
+      createElement(SettingsSection, {
+        prefs: DEFAULT_PREFS,
+        setPrefs: async () => {},
+        update: {
+          needRefresh: false,
+          applying: false,
+          stuck: false,
+          checking: false,
+          checkResult: "latest" as const,
+          lastCheckedAt: Date.parse("2026-10-30T08:00:00Z"),
+          check: () => {},
+          applyUpdate: () => {},
+          forceReload: () => {},
+        },
+      }),
+    );
+    expect(html).toContain("已经是最新版本");
+  });
+
   it("关于分区写明数据来源与版本号", () => {
     const html = render(createElement(AboutSection, { onOpenGuide: () => {} }));
     // 版本号来自构建时注入，不写死字面量 —— 否则每次发版都要改测试

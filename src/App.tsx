@@ -198,6 +198,7 @@ function AppShell() {
         }}
         canInstall={Boolean(installPrompt)}
         onInstall={install}
+        update={pwaUpdate}
       />
 
       {/* 深链兜底：导航后把 hash 对齐到实际渲染的页面 */}

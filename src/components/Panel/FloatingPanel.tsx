@@ -43,6 +43,7 @@ export function FloatingPanel({
   canInstall,
   onInstall,
   onOpenGuide,
+  update,
 }: FloatingPanelProps) {
   const isDesktop = useIsDesktop();
   const [minimized, setMinimized] = useState(false);
@@ -167,7 +168,7 @@ export function FloatingPanel({
               </TabsContent>
 
               <TabsContent value="settings">
-                <SettingsSection prefs={store.prefs} setPrefs={store.setPrefs} />
+                <SettingsSection prefs={store.prefs} setPrefs={store.setPrefs} update={update} />
               </TabsContent>
 
               <TabsContent value="about">

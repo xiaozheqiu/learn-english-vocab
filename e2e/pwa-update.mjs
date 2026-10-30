@@ -8,7 +8,7 @@
  *   1. 打开构建 A，等 SW 接管并走完首次设置；
  *   2. 把服务器根目录换成构建 B（sw.js 内容不同 → 浏览器认为是新版）；
  *   3. 触发 visibilitychange（等价于用户从后台切回 App）；
- *   4. 断言弹框出现；点「稍后」验证不重载、不重复打扰、重开再来；
+ *   4. 断言弹框出现且**关不掉**（无「稍后」、Esc 与点遮罩都无效）；
  *   5. 点「立即更新」，断言页面重载并变成构建 B 的内容。
  *
  * 用法：node e2e/pwa-update.mjs
@@ -167,34 +167,32 @@ try {
       "update.hasApplyButton",
       await dialog.getByRole("button", { name: "立即更新" }).isVisible(),
     );
+
+    /*
+     * 提示是阻塞的：没有「稍后」，也关不掉。
+     * 新版已经下载完停在 waiting，允许关掉等于默许用户继续跑旧代码。
+     */
     report.check(
-      "update.hasLaterButton",
-      await dialog.getByRole("button", { name: "稍后" }).isVisible(),
+      "update.hasNoLaterButton",
+      (await dialog.getByRole("button", { name: "稍后" }).count()) === 0,
+    );
+    report.check(
+      "update.hasNoCloseButton",
+      (await dialog.getByRole("button", { name: "关闭" }).count()) === 0,
+    );
+    report.check(
+      "update.focusOnApplyButton",
+      (await page.evaluate(() => document.activeElement?.textContent?.trim())) === "立即更新",
     );
 
-    /* ── 4.5 先验「稍后」：弹框关掉，页面不重载 ───────────── */
-    await dialog.getByRole("button", { name: "稍后" }).click();
-    await dialog.waitFor({ state: "hidden", timeout: 5000 }).catch(() => null);
-    const dismissedGone = (await dialog.count()) === 0;
-    report.check("update.dismissClosesDialog", dismissedGone);
-    report.check("update.dismissKeepsOldPage", (await page.title()) === titleA);
-
-    // 稍后之后同一会话不再重复打扰
-    await page.evaluate(() => {
-      document.dispatchEvent(new Event("visibilitychange"));
-      window.dispatchEvent(new Event("focus"));
-    });
-    await page.waitForTimeout(1200);
-    report.check("update.noSecondNudge", (await page.locator('[role="dialog"]').count()) === 0);
-
-    // 重新打开一次，弹框应再次出现（新 SW 仍在 waiting）
-    await page.reload({ waitUntil: "load" });
-    const dialog2 = page.locator('[role="dialog"]');
-    const reappeared = await dialog2
-      .waitFor({ state: "visible", timeout: 15000 })
-      .then(() => true)
-      .catch(() => false);
-    report.check("update.promptReturnsAfterReload", reappeared);
+    /* ── 4.5 关不掉：Esc / 点遮罩都不得让弹框消失 ─────────── */
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(400);
+    report.check("update.escDoesNotClose", (await dialog.count()) === 1);
+    await page.mouse.click(4, 4); // 点遮罩区域（左上角）
+    await page.waitForTimeout(400);
+    report.check("update.overlayClickDoesNotClose", (await dialog.count()) === 1);
+    report.check("update.stillOldPageWhileBlocked", (await page.title()) === titleA);
 
     /* ── 5. 点「立即更新」→ 重载 → 内容变新 ──────────────── */
     await Promise.all([
