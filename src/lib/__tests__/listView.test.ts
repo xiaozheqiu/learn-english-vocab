@@ -8,15 +8,12 @@ import {
 } from "../listView";
 import { isLevelFilter, type Word } from "../types";
 
-function w(level: Word["level"], word: string, cn = "释义"): Word {
+function w(level: Word["level"], word: string): Word {
   return {
     key: `${level}|${word}|n.`,
     level,
     word,
     pos: "n.",
-    cn,
-    scope: "3000",
-    seq: "",
     rank: 0,
     tier: "core",
     ox3000: false,
@@ -24,12 +21,7 @@ function w(level: Word["level"], word: string, cn = "释义"): Word {
   };
 }
 
-const WORDS: Word[] = [
-  w("A1", "apple", "苹果"),
-  w("A1", "abandon", "放弃"),
-  w("A2", "able", "能够"),
-  w("B2", "abandon", "遗弃"),
-];
+const WORDS: Word[] = [w("A1", "apple"), w("A1", "abandon"), w("A2", "able"), w("B2", "abandon")];
 
 /** 只这几个 key 记为已掌握 */
 function masteredOf(keys: readonly string[]) {

@@ -20,18 +20,13 @@ export function isLevelFilter(value: unknown): value is LevelFilter {
 export const PAGE_SIZES = [20, 50, 100, 200] as const;
 export type PageSize = (typeof PAGE_SIZES)[number];
 
-/** 词表行（由 data/*.json 归一化而来） */
+/** 词表行（由 src/data/*.json 归一化而来） */
 export interface Word {
   /** 主键：等级|单词|词性[|序号]，与旧版 localStorage 规则一致 */
   key: string;
   level: Level;
   word: string;
   pos: string;
-  cn: string;
-  /** "3000" | "5000" */
-  scope: string;
-  /** 词条序号，未使用为 "" */
-  seq: string;
   /**
    * 口语词频学习顺序（1 起）。
    *
@@ -56,8 +51,17 @@ export interface Word {
 
 export type Tier = "core" | "extended";
 
-/** 原始数据行：[单词, 词性, 中文释义, 3000/5000, 序号] */
-export type RawRow = [string, string, string, string, (number | string | undefined)?];
+/**
+ * 构建产物行：`[单词, 词性]`。
+ *
+ * 源数据 `data/*.js` 是 5 元组 `[单词, 词性, 中文释义, 3000/5000, 序号]`，
+ * 但后三项在前端没有任何读取方：释义不显示、也不参与搜索（查词交给三方词典），
+ * 序号与 3000/5000 从未进过 UI，主键也只用前两项。
+ * 继续把它们搬进分包，等于让每个用户多下载四成用不到的字节，
+ * 还要被 PWA 预缓存 —— 所以在 scripts/build-data.mjs 里就裁掉了。
+ * 需要释义请读 `data/*.js`（审计脚本与重抓牛津义项仍以它为源）。
+ */
+export type RawRow = [string, string];
 
 export type MasteryFilter = "all" | "todo" | "done";
 

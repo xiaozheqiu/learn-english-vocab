@@ -88,6 +88,9 @@ export function loadTierOrder(): Promise<Map<string, TierInfo>> {
  * 旧规则主键：`等级|单词|词性[|序号]`。
  * 同等级下 (词, 词性) 重复时给键加序号，避免两条词共用一个勾。
  * 必须与旧版 index.html / data.js 完全一致，否则老用户进度对不上。
+ *
+ * 注意：主键里的「序号」是**重复计数**（第几条同名同词性），
+ * 不是源数据第 5 列的 seq —— 后者从未参与主键，所以裁掉不影响历史进度。
  */
 export function buildKeys(level: Level, rows: readonly RawRow[]): Word[] {
   const base = rows.map<Word>((r) => ({
@@ -95,9 +98,6 @@ export function buildKeys(level: Level, rows: readonly RawRow[]): Word[] {
     level,
     word: String(r[0] ?? "").trim(),
     pos: String(r[1] ?? "").trim(),
-    cn: String(r[2] ?? "").trim(),
-    scope: String(r[3] ?? ""),
-    seq: String(r[4] ?? ""),
     rank: 0,
     tier: "core" as Tier,
     ox3000: false,
