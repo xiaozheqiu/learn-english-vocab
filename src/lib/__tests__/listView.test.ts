@@ -224,8 +224,20 @@ describe("词性与首字母筛选", () => {
     expect(rows.map((r) => `${r.level}|${r.word}`)).toEqual(["B2|run"]);
   });
 
-  it("首字母跨等级：选 a 不被当前等级切一刀", () => {
+  it("三个条件一起用：A1 + a 开头 + 名词 = 只剩 apple", () => {
+    const rows = filterWords(MIXED, { ...ALL, level: "A1", initial: "a", pos: "n" }, masteredOf([]));
+    expect(rows.map((r) => r.word)).toEqual(["apple"]);
+  });
+
+  it("首字母在当前等级内生效：停在 A1 选 a 只出 A1 那条", () => {
+    // 这条盯住一个曾经做反的行为：早先把首字母当「浏览入口」，选字母就悄悄
+    // 跳到全库，把用户明确设过的 A1 条件改掉了。停在 A1 的人不该被拉走。
     const rows = filterWords(MIXED, { ...ALL, level: "A1", initial: "a" }, masteredOf([]));
+    expect(rows.map((r) => `${r.level}|${r.word}`)).toEqual(["A1|apple"]);
+  });
+
+  it("想跨等级就看首字母，把等级选成「全部」即可", () => {
+    const rows = filterWords(MIXED, { ...ALL, level: "ALL", initial: "a" }, masteredOf([]));
     expect(rows.map((r) => `${r.level}|${r.word}`)).toEqual(["A1|apple", "B2|abrupt"]);
   });
 
@@ -234,9 +246,14 @@ describe("词性与首字母筛选", () => {
     expect(rows.map((r) => r.word)).toEqual(["abrupt"]);
   });
 
-  it("首字母为 all 时仍按等级过滤（浏览态之外的行为不变）", () => {
+  it("首字母为 all 时仍按等级过滤", () => {
     const rows = filterWords(MIXED, { ...ALL, level: "A1" }, masteredOf([]));
     expect(rows.every((r) => r.level === "A1")).toBe(true);
+  });
+
+  it("搜索仍然跨等级：只改搜索不该把 S 开头也拉成全库", () => {
+    const rows = filterWords(MIXED, { ...ALL, level: "A1", query: "run" }, masteredOf([]));
+    expect(rows.map((r) => `${r.level}|${r.word}`)).toEqual(["A1|run", "B2|run"]);
   });
 });
 

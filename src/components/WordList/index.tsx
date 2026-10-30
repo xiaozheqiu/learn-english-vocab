@@ -56,18 +56,17 @@ export function WordListPage({ store }: WordListPageProps) {
     setView((current) => ({ ...current, level: store.prefs.defaultLevel, page: 1 }));
   }, [store.prefs.defaultLevel]);
 
-  // 按等级 / 搜索 / 字母加载分包
+  // 按等级 / 搜索加载分包
   // 只依赖稳定的 ensureLevels：依赖整个 store 会在每次 words 变化后重跑，形成自激循环
   const { ensureLevels } = store;
   /**
-   * 跨等级浏览：搜索与字母筛选都要全库。
-   * 字母筛选是「从一个字母开始通读」的入口，只加载当前等级会让 S 开头的词
-   * 扫完 A1 那几十条就到底了，用户会以为词表就这么多。
+   * 跨等级浏览只发生在搜索上：搜一个词时不该被「当前停在 A1」挡住。
+   * 首字母不在此列 —— 它是普通筛选条件，在当前等级内生效（见 lib/listView.ts）。
    */
-  const browsing = Boolean(view.query.trim()) || view.initial !== "all";
+  const searching = Boolean(view.query.trim());
   useEffect(() => {
-    void ensureLevels(browsing ? "ALL" : view.level);
-  }, [browsing, ensureLevels, view.level]);
+    void ensureLevels(searching ? "ALL" : view.level);
+  }, [ensureLevels, searching, view.level]);
 
   const filtered = useMemo(
     () => filterWords(store.words, view, store.mastered),
@@ -85,9 +84,9 @@ export function WordListPage({ store }: WordListPageProps) {
 
   /**
    * 板块掌握进度：分母是板块总词数，不吃搜索词与掌握筛选。
-   * 搜索 / 字母浏览时列表本来就跨等级，进度也跟着报全库，否则数字和列表对不上。
+   * 搜索时列表本来就跨等级，进度也跟着报全库，否则数字和列表对不上。
    */
-  const progressScope: LevelFilter = browsing ? "ALL" : view.level;
+  const progressScope: LevelFilter = searching ? "ALL" : view.level;
   const progress = useMemo(
     () => scopeProgress(store.words, progressScope, store.mastered),
     [progressScope, store.mastered, store.words],
@@ -361,9 +360,9 @@ function EmptyState({
   query: string;
   onReset: () => void;
 }) {
-  // 浏览态（字母 / 搜索）跨等级，所以文案里报「全库」而不是当前等级，
-  // 否则选 S 开头时提示「A1 里没有符合条件的词」会让人以为词表只有 A1
-  const scope = level === "ALL" || initial !== "all" || query.trim() ? "全库" : level;
+  // 只有搜索会跨等级，那时文案报「全库」；首字母与词性都在当前等级内生效，
+  // 所以「A1 里没有 s 开头的词」是真的，如实报当前板块
+  const scope = level === "ALL" || query.trim() ? "全库" : level;
   const reason = query
     ? `没有匹配「${query}」的词`
     : mode === "done"

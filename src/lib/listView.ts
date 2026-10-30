@@ -255,11 +255,12 @@ export interface MasteredLookup {
  *
  * 搜索跨全部等级、不服从等级筛选：之前这里是「先按等级过滤再搜索」，
  * 结果搜 abandon（B2 词）在默认 A1 下永远是「没有匹配」——明明全库已加载，
- * 用户却以为词表里没这个词。字母筛选是同一件事（按开头浏览），所以同样跨等级：
- * 只认 a 开头的词时不该被「当前停在 A1」这一层再切一刀。
+ * 用户却以为词表里没这个词。
  *
- * 词性是纯筛选，与等级叠加：`B2 的动词` 这种组合是真实需求，
- * 而「跳字母」是浏览入口，两者的语义不同，不能套同一条规则。
+ * 首字母**不**这样：它和词性、档位一样是普通筛选条件，在当前等级内生效。
+ * 停在 A1 选 S 就只出 A1 里 s 开头的词 —— 想跨等级看，把等级选成「全部」。
+ * （早先把它当「浏览入口」处理、选字母就悄悄跳到全库，等于替用户改了他
+ * 明确设过的等级条件，停在 A1 的人会被莫名拉走。）
  */
 export function filterWords(
   words: readonly Word[],
@@ -275,8 +276,7 @@ export function filterWords(
   if (criteria.pos !== "all") {
     source = source.filter((w) => posTagsCached(w.pos).has(criteria.pos as PosTag));
   }
-  const browse = Boolean(keyword) || criteria.initial !== "all";
-  if (!browse && criteria.level !== "ALL") {
+  if (!keyword && criteria.level !== "ALL") {
     source = source.filter((w) => w.level === criteria.level);
   }
   if (criteria.initial !== "all") {

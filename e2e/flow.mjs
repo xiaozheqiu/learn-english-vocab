@@ -260,23 +260,62 @@ try {
   );
 
   /*
-   * 首字母跨等级：单独选 Z（全部等级 + 词性清空）时，
-   * A2 的 zero 和 B2 的 zeal 必须同时在结果里 —— 这正是不服从等级筛选的证据。
+   * 首字母是普通筛选条件：在当前等级内生效，不得把用户拉离他设的等级。
+   *
+   * 这条曾经做反过 —— 选字母就悄悄跳到全库，停在 A1 的人会被莫名带走。
+   * 所以这里钉两条：停在 A1 选 S 仍全部是 A1（A1 里有 96 条 s 开头，
+   * 不会退化成空态，断言才有力）；把等级改成「全部」后同一个 S 才跨等级。
    */
   await openFilter(page);
   await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  // 只选等级 A1，字母仍留在「全部」
+  await nav.dialog(page).locator('[data-testid="filter-level"]').getByRole("button").nth(0).click();
   await nav
     .dialog(page)
     .locator('[data-testid="filter-initial"]')
-    .getByRole("button", { name: "Z 开头" })
+    .getByRole("button", { name: "S 开头" })
+    .click();
+  const a1Preview = await page.locator('[data-testid="filter-preview"]').getAttribute("data-count");
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await until(page, async () => (await rowCount(page)) > 0, { label: "A1 s rows" });
+  const a1s = await page
+    .locator('[role="row"][data-key]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-key").split("|")[0]));
+  // 非空 + 全是 A1 + 总数远少于全库的 603（A1 里只有 96 条），三条缺一不可
+  report.check(
+    "filter.initialStaysInsideLevel",
+    a1s.length > 0 &&
+      a1s.every((level) => level === "A1") &&
+      Number(a1Preview) === 96 &&
+      Number(await page.locator('[data-testid="word-grid"]').getAttribute("aria-rowcount")) === 96,
+    `preview=${a1Preview} levels=${[...new Set(a1s)].join(",")}`,
+  );
+
+  // 同一个 Z，等级改成「全部」才跨等级 —— 「跨不跨」由等级条件说了算
+  await openFilter(page);
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-level"]')
+    .getByRole("button", { name: "全部", exact: true })
     .click();
   await nav.dialog(page).locator('[data-testid="filter-done"]').click();
   await waitDialogClosed(page);
-  await until(page, async () => (await rowCount(page)) > 0, { label: "z rows" });
-  const zLevels = await page
+  await until(page, async () => (await rowCount(page)) > 0, { label: "s rows across levels" });
+  const allS = await page.locator('[data-testid="word-grid"]').getAttribute("aria-rowcount");
+  const sLevels = await page
     .locator('[role="row"][data-key]')
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-key").split("|")[0]));
-  report.check("filter.initialBrowsesAcrossLevels", new Set(zLevels).size > 1, zLevels.join(","));
+  /*
+   * 断言的是总数从 96 涨到 603，不是「第一页混着多个等级」——
+   * 词表按 A1→C1 顺序平铺，第一页本来就全是 A1 的词，拿页内等级分布
+   * 判断跨没跨等级是错的（头一版就这么写错了一次）。
+   */
+  report.check(
+    "filter.initialCrossLevelsOnlyWhenLevelIsAll",
+    Number(allS) === 603,
+    `total=${allS}（A1 单独只有 96）`,
+  );
 
   // 复原：回到全部等级、无词性、无字母
   await openFilter(page);

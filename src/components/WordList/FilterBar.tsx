@@ -413,9 +413,10 @@ export function FilterBar({
             </section>
 
             {/*
-              首字母：按开头浏览整张表。
-              这条和搜索一样**跨等级**——想「把 S 开头的词过一遍」时，
-              被「当前停在 A1」再切一刀就失去了意义。
+              首字母：普通筛选条件，和词性、档位一样在**当前等级内**生效。
+              停在 A1 选 S → 只出 A1 里 s 开头的词；想跨等级看就把等级改成「全部」。
+              不要把它做成「选字母就跳全库」：那等于替用户改掉了他明确设过的
+              等级条件，停在 A1 的人会被莫名拉走。
               没有 X 开头的词（5323 条已核），所以按钮里不给 X。
             */}
             <section className="mt-4" aria-labelledby="filter-initial-title">
@@ -459,7 +460,7 @@ export function FilterBar({
                 ))}
               </div>
               <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-                选字母时跨全部等级（不叠加等级条件），方便从一个字母开始通读。
+                在当前等级内筛选；想看全部等级的词，把上面的等级选成「全部」。
               </p>
             </section>
 
