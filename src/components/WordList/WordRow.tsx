@@ -23,8 +23,10 @@ export interface WordRowProps {
  * - 左侧勾选框 = 选中行，只服务于右下角的批量操作；
  * - 右侧药丸 = 是否已掌握，点一下切换，已掌握时只保留这一颗按下态按钮。
  *
- * 布局：勾选框 / 序号 / 单词 + 释义 / 掌握药丸。
- * 移动端释义换到第二行，右侧动作贴右上；桌面端单行四列。
+ * 布局：勾选框 / 序号 / 单词 + 词性 / 掌握药丸，全宽单行。
+ *
+ * 释义不在行内展示：点单词会跳到三方词典，中文含义在那边看，
+ * 词表只留「这个词认不认识」这一个判断，行高也就稳定成一行。
  *
  * `memo` 是必需的：一页 200 行时，勾选任意一行都会让父组件重渲染，
  * 不做 memo 就要重建 200 个行组件。
@@ -54,7 +56,7 @@ export const WordRow = memo(
           }
         }}
         className={cn(
-          "rail relative flex cursor-pointer items-start gap-x-2.5 border-b border-line/70 py-3 pl-3.5 pr-3 last:border-b-0",
+          "rail relative flex cursor-pointer items-center gap-x-2.5 border-b border-line/70 py-2 pl-3.5 pr-3 last:border-b-0",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand",
           "hover:bg-brand-wash/40",
           // 选中 = 浅绿底；已掌握 = 文字变淡 + 左栏，不再抢同一块底色
@@ -63,7 +65,7 @@ export const WordRow = memo(
         )}
       >
         {/* 44×44 热区：容器撑到 44 高，勾选框本体仍是 18×18 */}
-        <span className="flex h-11 items-start pt-[13px]">
+        <span className="flex h-11 items-center">
           <Checkbox
             checked={checked}
             onCheckedChange={() => onToggleSelect(word.key)}
@@ -80,36 +82,29 @@ export const WordRow = memo(
           {index}
         </span>
 
-        {/* 单词 + 词性 + 释义 */}
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5 lg:flex-row lg:items-baseline lg:gap-3">
-          <span className="flex min-w-0 items-baseline gap-2 lg:w-[9.5rem] lg:shrink-0">
-            <a
-              href={transUrl(word.word)}
-              target={isMobile ? undefined : "_blank"}
-              rel="noopener noreferrer"
-              onClick={(event) => event.stopPropagation()}
-              className={cn(
-                "word-serif text-[17px] font-semibold leading-[1.4] text-ink underline-offset-4 hover:text-brand-ink hover:underline",
-                mastered && "text-ink-soft",
-              )}
-            >
-              {word.word}
-            </a>
-            <span className="shrink-0 text-[12px] text-ink-mute">{word.pos}</span>
-          </span>
-          <span
+        {/* 单词 + 词性：中文含义只在三方词典里看，行内不再重复一遍。
+            用 inline 流而不是 flex：thought-provoking 这类长词在窄屏折行时，
+            词性会跟在最后一个词后面，而不是被推到右侧孤零零一格。 */}
+        <span className="min-w-0 flex-1 leading-[1.4]">
+          <a
+            href={transUrl(word.word)}
+            target={isMobile ? undefined : "_blank"}
+            rel="noopener noreferrer"
+            onClick={(event) => event.stopPropagation()}
             className={cn(
-              "min-w-0 flex-1 text-[13px] leading-6 text-ink-soft",
-              mastered && "text-ink-mute",
+              "word-serif text-[17px] font-semibold text-ink underline-offset-4 hover:text-brand-ink hover:underline",
+              mastered && "text-ink-soft",
             )}
           >
-            {word.cn}
-            {word.seq && <span className="ml-1.5 text-[12px] text-ink-mute">（{word.seq}）</span>}
-          </span>
+            {word.word}
+          </a>
+          {word.pos && (
+            <span className="ml-2 whitespace-nowrap text-[12px] text-ink-mute">{word.pos}</span>
+          )}
         </span>
 
         {/* 右侧：掌握药丸（唯一的状态控件） */}
-        <span className="flex shrink-0 items-center pt-[3px] lg:pt-0">
+        <span className="flex shrink-0 items-center">
           <button
             type="button"
             onClick={(event) => {

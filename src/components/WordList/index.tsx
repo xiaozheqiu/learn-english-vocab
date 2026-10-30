@@ -266,9 +266,7 @@ export function WordListPage({ store }: WordListPageProps) {
                 />
               </span>
               <span className="w-6 text-right">#</span>
-              <span className="flex-1">
-                单词 <span className="normal-case tracking-normal">/ 释义</span>
-              </span>
+              <span className="flex-1">单词</span>
               <span className="hidden lg:inline">掌握</span>
             </div>
           )}
