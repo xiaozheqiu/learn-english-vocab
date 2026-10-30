@@ -16,6 +16,7 @@ import {
   launch,
   nav,
   newPage,
+  openAbout,
   openFilter,
   rowCount,
   until,
@@ -86,10 +87,16 @@ try {
     .locator('[role="dialog"] [data-testid^="filter-"]')
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
   report.check(
-    "filter.sectionsAreLevelTierOxfordModeSize",
-    ["filter-level", "filter-tier", "filter-oxford", "filter-mode", "filter-size"].every((id) =>
-      filterSections.includes(id),
-    ),
+    "filter.sectionsAreLevelTierOxfordPosInitialModeSize",
+    [
+      "filter-level",
+      "filter-tier",
+      "filter-oxford",
+      "filter-pos",
+      "filter-initial",
+      "filter-mode",
+      "filter-size",
+    ].every((id) => filterSections.includes(id)),
     filterSections.join(","),
   );
   await page.keyboard.press("Escape");
@@ -194,6 +201,107 @@ try {
   await waitDialogClosed(page);
   await waitRows(page, 20);
   report.check("scope.resetToAllLevels", (await scopeOf()).scope === "ALL");
+
+  /* ── 3b-2. 词性与首字母 ─────────────────────────────────────── */
+  /*
+   * 两条都按结构断言：词性看每行的 data-pos 是否都含目标大类，
+   * 字母看 data-key 里的单词首字符。不查按钮文案。
+   *
+   * 词性先清回「全部等级」，否则 A1 里没有 modal v. 之类会让人怀疑筛选坏了。
+   */
+  const rowPos = () =>
+    page.locator('[role="row"][data-key]').evaluateAll((els) => els.map((el) => el.dataset.pos));
+  const rowWords = () =>
+    page
+      .locator('[role="row"][data-key]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-key").split("|")[1]));
+
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-pos"]')
+    .getByRole("button", { name: "动词" })
+    .click();
+  const verbPreview = await page
+    .locator('[data-testid="filter-preview"]')
+    .getAttribute("data-count");
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await until(page, async () => (await rowCount(page)) > 0, { label: "verb rows" });
+  const verbs = await rowPos();
+  report.check(
+    "filter.posMatchesEveryRow",
+    verbs.length > 0 && verbs.every((pos) => /(^|[,/]\s*)(modal |auxiliary )?v\./.test(pos)),
+    verbs.slice(0, 3).join(" / "),
+  );
+  report.check(
+    "filter.previewCountsBeforeApply",
+    Number(verbPreview) ===
+      Number(await page.locator('[data-testid="word-grid"]').getAttribute("aria-rowcount")),
+    `${verbPreview}`,
+  );
+
+  // 叠加首字母：剩下的每一行都必须以该字母开头
+  await openFilter(page);
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-initial"]')
+    .getByRole("button", { name: "S 开头" })
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await until(page, async () => (await rowCount(page)) > 0, { label: "verb + s rows" });
+  const verbS = await rowWords();
+  report.check(
+    "filter.initialCombinesWithPos",
+    verbS.length > 0 && verbS.every((word) => word.toLowerCase().startsWith("s")),
+    verbS.slice(0, 5).join(","),
+  );
+
+  /*
+   * 首字母跨等级：单独选 Z（全部等级 + 词性清空）时，
+   * A2 的 zero 和 B2 的 zeal 必须同时在结果里 —— 这正是不服从等级筛选的证据。
+   */
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-initial"]')
+    .getByRole("button", { name: "Z 开头" })
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await until(page, async () => (await rowCount(page)) > 0, { label: "z rows" });
+  const zLevels = await page
+    .locator('[role="row"][data-key]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-key").split("|")[0]));
+  report.check("filter.initialBrowsesAcrossLevels", new Set(zLevels).size > 1, zLevels.join(","));
+
+  // 复原：回到全部等级、无词性、无字母
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  const resetPreview = await page
+    .locator('[data-testid="filter-preview"]')
+    .getAttribute("data-count");
+  report.check("filter.resetClearsNewDimensions", Number(resetPreview) === 5323, resetPreview);
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+
+  /* ── 3b-3. 抽屉操作条固定，不随条件列表滚出视口 ──────────── */
+  await openFilter(page);
+  // 抽屉是从底部滑上来的（200ms），测量要等它落位，否则读到动画中间帧
+  await page.waitForTimeout(400);
+  const doneBox = await page.locator('[data-testid="filter-done"]').boundingBox();
+  const viewport = page.viewportSize();
+  report.check(
+    "filter.doneButtonStaysVisible",
+    doneBox !== null && doneBox.y + doneBox.height <= viewport.height + 1,
+    `y=${doneBox?.y} h=${doneBox?.height} vh=${viewport.height}`,
+  );
+  await page.keyboard.press("Escape");
+  await waitDialogClosed(page);
 
   /* ── 4. 批量（浮动按钮 + 抽屉）──────────────────────────── */
   const fab = nav.bulk(page);
@@ -315,60 +423,48 @@ try {
   await page.goto(BASE, { waitUntil: "networkidle" });
   await waitRows(page, 20);
 
-  /* ── 8. 学习面板：只有数据 / 设置 / 关于 ─────────────────── */
-  await nav.panel(page).click();
-  await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel" });
+  /*
+   * ── 8. 顶栏只剩一个「关于」入口 ────────────────────────────
+   *
+   * 面板收成单页：数据分区（导出 / 导入 / 清空）与设置分区（每页条数 / 默认等级）
+   * 都移除。这里钉住三件事，防止它们偷偷回来：
+   *   1. 顶栏入口只有「关于」，没有齿轮；
+   *   2. 面板里没有任何 tab 分区；
+   *   3. 导出的 JSON 与「清空进度」在界面上彻底不存在。
+   */
+  report.check(
+    "panel.singleAboutEntry",
+    (await page.locator('button[aria-label="关于"]').count()) === 1 &&
+      (await page.getByRole("button", { name: "打开学习面板" }).count()) === 0,
+  );
+
+  await openAbout(page);
   const dialog = nav.dialog(page);
-  report.check("panel.tabCount", (await page.getByRole("tab").count()) === 3);
+  report.check("panel.noTabs", (await page.getByRole("tab").count()) === 0);
+  const aboutText = await dialog.innerText();
+  report.check("panel.keepsAbout", /关于/.test(aboutText) && /5323/.test(aboutText));
   report.check(
-    "panel.hasNoCoverageCard",
-    (await dialog.locator('[data-testid="coverage-card"]').count()) === 0,
-  );
-  report.check(
-    "panel.hasNoReviewSize",
-    (await dialog.locator('[data-testid="review-size-group"]').count()) === 0,
-  );
-  report.check(
-    "panel.hasNoQuizSize",
-    (await dialog.locator('[data-testid="quiz-size-group"]').count()) === 0,
+    "panel.noDataSection",
+    (await page.getByRole("button", { name: /导出 JSON/ }).count()) === 0 &&
+      (await page.getByRole("button", { name: /选择 JSON 文件/ }).count()) === 0 &&
+      (await page.getByRole("button", { name: /清空进度/ }).count()) === 0 &&
+      !/导入备份/.test(aboutText),
   );
   report.check(
-    "panel.hasNoQuizTypes",
-    (await dialog.locator('[data-testid="quiz-type-group"]').count()) === 0,
+    "panel.noSettingsSection",
+    (await page.locator("#pref-page-size").count()) === 0 &&
+      (await page.locator("#pref-default-level").count()) === 0 &&
+      !/每页条数/.test(aboutText),
   );
-
-  // 数据分区：导出 / 导入 / 清空三件套还在
-  const dataPane = await dialog.innerText();
-  report.check("data.hasExport", /导出/.test(dataPane));
-  report.check("data.hasImport", /导入/.test(dataPane));
-  report.check("data.hasWipe", /清空/.test(dataPane));
-
-  // 清空需要二次确认：点开确认区，再取消（不真的清）
-  await page.getByRole("button", { name: /清空进度/ }).click();
-  await until(
-    page,
-    async () =>
-      (await page
-        .locator('[role="dialog"] button')
-        .filter({ hasText: /确认清空/ })
-        .count()) > 0,
-    { label: "wipe confirm" },
+  // 关于里还留着两个真正有用的动作：检查更新、打开词性对照
+  report.check(
+    "panel.keepsUpdateCheck",
+    (await page.locator('[data-testid="check-update"]').count()) === 1,
   );
-  report.check("data.wipeNeedsConfirm", true);
-  await page.keyboard.press("Escape");
-  await waitDialogClosed(page);
-
-  /* ── 9. 设置分区：只剩词表偏好，没有学习节奏与锁屏 ───────── */
-  await nav.panel(page).click();
-  await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel 2" });
-  await page.getByRole("tab").filter({ hasText: /设置/ }).click();
-  const settingsPane = await page.locator('[role="dialog"]').innerText();
-  report.check("settings.hasPageSize", /每页条数/.test(settingsPane));
-  report.check("settings.hasDefaultLevel", /默认等级/.test(settingsPane));
-  report.check("settings.noRetention", !/留存率/.test(settingsPane));
-  report.check("settings.noAutoLock", !/自动锁定/.test(settingsPane));
-  report.check("settings.noPin", !/PIN/.test(settingsPane));
-  report.check("settings.noNewWordsQuota", (await page.locator("#pref-new-per-day").count()) === 0);
+  report.check(
+    "panel.keepsGuideEntry",
+    (await page.getByRole("button", { name: /打开词性对照表/ }).count()) === 1,
+  );
   await page.keyboard.press("Escape");
   await waitDialogClosed(page);
 
@@ -387,9 +483,7 @@ try {
     { label: "B1 applied" },
   );
 
-  await nav.panel(page).click();
-  await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel 3" });
-  await page.getByRole("tab").filter({ hasText: /关于/ }).click();
+  await openAbout(page);
   await page.getByRole("button", { name: /打开词性对照表/ }).click();
   await waitDialogClosed(page);
   await until(page, async () => (await page.evaluate(() => location.hash)) === "#/guide", {
@@ -418,6 +512,33 @@ try {
   await desktop.goto(BASE, { waitUntil: "networkidle" });
   await waitRows(desktop, 20);
   report.check("desktop.hasTablist", (await desktop.locator('[role="tablist"]').count()) === 1);
+
+  /*
+   * 桌面抽屉（side=center）也必须限高：条件加到 7 组后内容 1217px，
+   * 不限高会被撑出视口、上下裁掉，「确定」直接点不到。
+   * 这里量的是「按钮完整落在视口内 + 能点到」，不是查样式类名。
+   */
+  await openFilter(desktop);
+  await desktop.waitForTimeout(400);
+  const dDone = await desktop.locator('[data-testid="filter-done"]').boundingBox();
+  const dView = desktop.viewportSize();
+  const dDialog = await desktop.locator('[role="dialog"]').boundingBox();
+  report.check(
+    "desktop.filterSheetFitsViewport",
+    dDialog !== null &&
+      dDialog.y >= 0 &&
+      dDialog.y + dDialog.height <= dView.height + 1 &&
+      dDone !== null &&
+      dDone.y + dDone.height <= dView.height + 1,
+    `dialog y=${dDialog?.y} h=${dDialog?.height} doneBottom=${dDone && dDone.y + dDone.height} vh=${dView.height}`,
+  );
+  await desktop.locator('[data-testid="filter-done"]').click({ timeout: 4000 });
+  // Radix 关闭有 200ms 退场动画，元素不会立刻卸载
+  await waitDialogClosed(desktop);
+  report.check(
+    "desktop.filterDoneClickable",
+    (await desktop.locator('[data-testid="filter-done"]').count()) === 0,
+  );
   await nav.guide(desktop).click();
   await until(desktop, async () => (await desktop.evaluate(() => location.hash)) === "#/guide", {
     label: "desktop guide route",

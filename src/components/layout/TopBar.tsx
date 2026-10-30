@@ -1,19 +1,22 @@
-import { BookOpen, Search, Settings2 } from "lucide-react";
+import { BookOpen, Info, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface TopBarProps {
   title: string;
   onSearch?: () => void;
-  onOpenPanel: () => void;
+  onOpenAbout: () => void;
   onOpenGuide?: () => void;
   memoryMode?: boolean;
 }
 
 /**
- * 顶栏（§2.1）：标题 + 搜索 + 浮窗入口。
- * 浮窗入口固定在顶栏右侧，不做悬浮球（会压住列表且难点）。
+ * 顶栏（§2.1）：标题 + 搜索 + 「关于」入口。
+ * 入口固定在顶栏右侧，不做悬浮球（会压住列表且难点）。
+ *
+ * 图标是信息「i」而不是齿轮：面板里只剩一张关于页，没有可配置项了。
+ * 齿轮会让人点开找设置，然后发现无处可设。
  */
-export function TopBar({ title, onSearch, onOpenPanel, onOpenGuide, memoryMode }: TopBarProps) {
+export function TopBar({ title, onSearch, onOpenAbout, onOpenGuide, memoryMode }: TopBarProps) {
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-paper/95 backdrop-blur">
       <div className="flex h-12 items-center gap-1 px-2">
@@ -51,11 +54,11 @@ export function TopBar({ title, onSearch, onOpenPanel, onOpenGuide, memoryMode }
           variant="ghost"
           size="icon"
           className="h-10 w-10"
-          onClick={onOpenPanel}
-          aria-label="打开学习面板"
-          title="学习面板"
+          onClick={onOpenAbout}
+          aria-label="关于"
+          title="关于"
         >
-          <Settings2 className="h-4 w-4" aria-hidden="true" />
+          <Info className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
 

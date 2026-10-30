@@ -191,8 +191,8 @@ try {
   );
 
   /* ── 4. 手动检查：已经在新版上时必须给「已经是最新版本」 ── */
-  await page.locator('button[aria-label="打开学习面板"]').click();
-  await page.getByRole("tab").filter({ hasText: /设置/ }).click();
+  // 面板收成单页「关于」之后，检查更新就在这一页上，不用再切 tab
+  await page.locator('button[aria-label="关于"]').click();
   const checkBtn = page.locator('[data-testid="check-update"]');
   report.check("settings.hasCheckUpdate", await checkBtn.isVisible());
 

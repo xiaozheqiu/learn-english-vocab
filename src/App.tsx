@@ -24,9 +24,9 @@ function AppShell() {
   const isDesktop = useIsDesktop();
   const pwaUpdate = usePwaUpdate();
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
-  const [panelOpen, setPanelOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<{ prompt: () => Promise<void> } | null>(null);
-  const panelTrigger = useRef<HTMLElement | null>(null);
+  const aboutTrigger = useRef<HTMLElement | null>(null);
 
   /* ── 路由 ──────────────────────────────────────────────────── */
   useEffect(() => {
@@ -99,14 +99,14 @@ function AppShell() {
     setInstallPrompt(null);
   }, [installPrompt]);
 
-  const openPanel = useCallback(() => {
-    panelTrigger.current = document.activeElement as HTMLElement | null;
-    setPanelOpen(true);
+  const openAbout = useCallback(() => {
+    aboutTrigger.current = document.activeElement as HTMLElement | null;
+    setAboutOpen(true);
   }, []);
 
-  const onPanelOpenChange = useCallback((open: boolean) => {
-    setPanelOpen(open);
-    if (!open) window.setTimeout(() => panelTrigger.current?.focus(), 0);
+  const onAboutOpenChange = useCallback((open: boolean) => {
+    setAboutOpen(open);
+    if (!open) window.setTimeout(() => aboutTrigger.current?.focus(), 0);
   }, []);
 
   /* ── 早期返回：正在读本机进度 ──────────────────────────────── */
@@ -134,7 +134,7 @@ function AppShell() {
         <div className="mx-auto w-full max-w-5xl shrink-0 px-6">
           <TopBar
             title="Oxford 5000"
-            onOpenPanel={openPanel}
+            onOpenAbout={openAbout}
             onOpenGuide={() => navigate("guide")}
             memoryMode={store.memoryMode}
           />
@@ -169,7 +169,7 @@ function AppShell() {
       ) : (
         <TopBar
           title={ROUTE_TITLES[activeRoute]}
-          onOpenPanel={openPanel}
+          onOpenAbout={openAbout}
           memoryMode={store.memoryMode}
         />
       )}
@@ -189,11 +189,11 @@ function AppShell() {
       </main>
 
       <FloatingPanel
-        open={panelOpen}
-        onOpenChange={onPanelOpenChange}
+        open={aboutOpen}
+        onOpenChange={onAboutOpenChange}
         store={store}
         onOpenGuide={() => {
-          setPanelOpen(false);
+          setAboutOpen(false);
           navigate("guide");
         }}
         canInstall={Boolean(installPrompt)}

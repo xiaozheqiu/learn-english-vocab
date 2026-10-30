@@ -6,9 +6,6 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  clearProgress as dbClearProgress,
-  exportAll as dbExportAll,
-  importAll as dbImportAll,
   isMemoryMode,
   loadSnapshot,
   migrateLegacy,
@@ -39,10 +36,6 @@ export interface VocabStore {
   ensureLevels: (target: LevelFilter) => Promise<void>;
   toggleMastery: (keys: readonly string[], mastered: boolean) => Promise<void>;
   setPrefs: (patch: Partial<Prefs>) => Promise<void>;
-  exportData: () => Promise<unknown>;
-  importData: (payload: unknown) => Promise<void>;
-  wipeProgress: () => Promise<void>;
-  refresh: () => Promise<void>;
 }
 
 export function useVocabStore(): VocabStore {
@@ -179,27 +172,6 @@ export function useVocabStore(): VocabStore {
     }
   }, []);
 
-  const exportData = useCallback(() => dbExportAll(), []);
-
-  const importData = useCallback(async (payload: unknown) => {
-    await dbImportAll(payload);
-    const snapshot = await loadSnapshot();
-    setMastered(snapshot.mastery);
-    setPrefsState(snapshot.meta.prefs);
-  }, []);
-
-  const wipeProgress = useCallback(async () => {
-    await dbClearProgress();
-    setMastered(new Map());
-  }, []);
-
-  const refresh = useCallback(async () => {
-    const snapshot = await loadSnapshot();
-    setMastered(snapshot.mastery);
-    setPrefsState(snapshot.meta.prefs);
-    setMemoryMode(isMemoryMode());
-  }, []);
-
   return useMemo(
     () => ({
       ready,
@@ -212,10 +184,6 @@ export function useVocabStore(): VocabStore {
       ensureLevels,
       toggleMastery,
       setPrefs,
-      exportData,
-      importData,
-      wipeProgress,
-      refresh,
     }),
     [
       ready,
@@ -228,10 +196,6 @@ export function useVocabStore(): VocabStore {
       ensureLevels,
       toggleMastery,
       setPrefs,
-      exportData,
-      importData,
-      wipeProgress,
-      refresh,
     ],
   );
 }

@@ -46,6 +46,12 @@ export const WordRow = memo(
         tabIndex={0}
         aria-selected={checked}
         data-key={word.key}
+        /*
+         * 词性原样挂出来：词性筛选用的是归一化后的大类（见 lib/listView.ts），
+         * 前端没法从渲染出来的文本反推「这一行算不算 v.」，测试与将来可能的
+         * 行内标注都需要拿到源值，所以直接暴露原始字段。
+         */
+        data-pos={word.pos}
         onClick={(event) => onToggleSelect(word.key, event.shiftKey)}
         onKeyDown={(event) => {
           // 行内交互元素各自处理自己的键，这里只接行本身

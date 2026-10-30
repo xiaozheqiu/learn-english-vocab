@@ -2,16 +2,13 @@
  * 边界与持久化回归（结构断言版）。
  *
  * 覆盖：视图（筛选 + 页码）跨刷新保留、每页条数只在筛选抽屉里改、
- * 数据面板的导出下载与清空二次确认、常驻面板的滚动位置、
- * 词性对照的深链与返回、桌面宽度下的布局。
+ * 数据 / 设置分区已移除（关于里不留导出、导入、清空与显示偏好）、
+ * 常驻面板的滚动位置、词性对照的深链与返回、桌面宽度下的布局。
  * 规则同 flow.mjs：不绕过被测行为，不按文案断言。
  *
  * 运行：node e2e/edge.mjs [BASE_URL]
  */
 
-import { mkdtemp, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   BASE,
   VIEWPORTS,
@@ -20,6 +17,7 @@ import {
   launch,
   nav,
   newPage,
+  openAbout,
   openFilter,
   rowCount,
   until,
@@ -159,10 +157,8 @@ try {
   );
 
   const scrollBefore = beforeScroll.scrollTop;
-  // 应用内路径（不刷新页面）：面板 → 关于 → 打开词性对照表
-  await nav.panel(page).click();
-  await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel 0" });
-  await page.getByRole("tab").filter({ hasText: /关于/ }).click();
+  // 应用内路径（不刷新页面）：顶栏「关于」→ 打开词性对照表
+  await openAbout(page);
   await page.getByRole("button", { name: /打开词性对照表/ }).click();
   await waitDialogClosed(page);
   await until(page, async () => (await page.evaluate(() => location.hash)) === "#/guide", {
@@ -190,8 +186,12 @@ try {
     `${scrollBefore} → ${scrollAfter}`,
   );
 
-  /* ── 数据面板：导出的 JSON 只带 mastery / prefs ─────────────── */
-  // 先标一个词，导出的文件里必须看得到它（不靠「导出成功」这种自我声明）
+  /*
+   * ── 数据与设置分区已移除 ────────────────────────────────────
+   *
+   * 先标一个词，再确认「关于」里没有任何把这份进度导出去或清掉的入口。
+   * 断言查的是按钮是否存在，不查文案是否改过。
+   */
   const firstRow = page.locator('[role="row"][data-key]').first();
   const firstKey = await firstRow.getAttribute("data-key");
   const rowMasteryBtn = firstRow
@@ -200,47 +200,22 @@ try {
     .last();
   await rowMasteryBtn.click();
   await until(page, async () => (await rowMasteryBtn.getAttribute("aria-pressed")) === "true", {
-    label: "mastery set for export",
+    label: "mastery set before about",
   });
 
-  await nav.panel(page).click();
-  await until(page, async () => (await nav.dialog(page).count()) > 0, { label: "panel" });
-  await page.getByRole("tab").filter({ hasText: /数据/ }).click();
-
-  const downloadDir = await mkdtemp(join(tmpdir(), "ox5000-download-"));
-  const downloadPromise = page.waitForEvent("download", { timeout: 15000 });
-  await page.getByRole("button", { name: /导出 JSON/ }).click();
-  const download = await downloadPromise;
-  const file = join(downloadDir, download.suggestedFilename());
-  await download.saveAs(file);
-  const payload = JSON.parse(await readFile(file, "utf8"));
+  await openAbout(page);
+  const aboutPane = await nav.dialog(page).innerText();
   report.check(
-    "data.exportCarriesMarkedWord",
-    Array.isArray(payload.mastery) && payload.mastery.includes(firstKey),
-    `${download.suggestedFilename()} mastery=${payload.mastery?.length}`,
+    "panel.noExportImportWipe",
+    (await page.getByRole("button", { name: /导出/ }).count()) === 0 &&
+      (await page.getByRole("button", { name: /选择 JSON/ }).count()) === 0 &&
+      (await page.getByRole("button", { name: /清空/ }).count()) === 0 &&
+      !/导入/.test(aboutPane),
   );
-  report.check("data.exportOmitsRemovedStores", !("srs" in payload) && !("days" in payload));
-
-  // 清空：先点开确认区，再取消（不真的清）
-  await page.getByRole("button", { name: /清空进度/ }).click();
-  await until(
-    page,
-    async () =>
-      (await page
-        .locator('[role="dialog"] button')
-        .filter({ hasText: /确认清空/ })
-        .count()) > 0,
-    { label: "wipe confirm" },
-  );
-  report.check("data.wipeNeedsConfirm", true);
-  await page.getByRole("button", { name: /取消/ }).click();
-  await page.waitForTimeout(150);
   report.check(
-    "data.wipeCancelRestores",
-    (await page
-      .locator('[role="dialog"] button')
-      .filter({ hasText: /确认清空/ })
-      .count()) === 0,
+    "panel.noDisplayPrefs",
+    (await page.locator("#pref-page-size").count()) === 0 &&
+      (await page.locator("#pref-default-level").count()) === 0,
   );
   await page.keyboard.press("Escape");
   await waitDialogClosed(page);

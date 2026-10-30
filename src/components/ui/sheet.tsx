@@ -40,8 +40,14 @@ export const SheetContent = React.forwardRef<
         "data-[state=open]:animate-in data-[state=closed]:animate-out duration-200",
         side === "bottom" &&
           "inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom",
+        /*
+         * center 也要限高：这个弹窗原本只装 5 组短条件，内容自然没超过一屏；
+         * 筛选抽屉加到 7 组（含 26 个字母按钮）后高度到 1217px，而 center 没有
+         * max-h 约束，整块被撑出视口、上下被裁 —— 底部的「确定」直接点不到。
+         * 限到 85vh 与 bottom 一致，内容超了由调用方的 overflow-y-auto 内部滚。
+         */
         side === "center" &&
-          "left-1/2 top-1/2 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
+          "left-1/2 top-1/2 max-h-[85vh] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95",
         side === "right" &&
           "bottom-0 right-0 h-full w-full max-w-sm border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right",
         className,

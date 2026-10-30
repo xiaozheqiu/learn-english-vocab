@@ -1,51 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_META, isMemoryMode, normalizePrefs, parseExport, probeStorage } from "../db";
+import { DEFAULT_META, isMemoryMode, normalizePrefs, probeStorage } from "../db";
 import { DEFAULT_PREFS } from "../types";
-
-describe("导出/导入解析", () => {
-  it("合法载荷被完整接收", () => {
-    const payload = {
-      version: 3,
-      exportedAt: "2026-03-10T00:00:00.000Z",
-      mastery: ["A1|abandon|v."],
-      prefs: DEFAULT_PREFS,
-    };
-    const parsed = parseExport(payload);
-    expect(parsed.mastery).toEqual(["A1|abandon|v."]);
-    expect(parsed.prefs).toEqual(DEFAULT_PREFS);
-  });
-
-  it("v2 老备份里的 srs / days 被忽略，mastery 照常导入", () => {
-    const parsed = parseExport({
-      version: 2,
-      mastery: ["K"],
-      srs: [{ key: "K", due: 0, stability: 1, difficulty: 5 }],
-      days: [{ day: "2026-03-10", reviewed: 3 }],
-    });
-    expect(parsed.mastery).toEqual(["K"]);
-    expect("srs" in parsed).toBe(false);
-    expect(parsed.version).toBe(3);
-  });
-
-  it("字符串输入也能解析", () => {
-    const parsed = parseExport(JSON.stringify({ mastery: ["k"] }));
-    expect(parsed.mastery).toEqual(["k"]);
-  });
-
-  it("脏数据被过滤而不是整包失败", () => {
-    const parsed = parseExport({
-      mastery: ["ok", 123, null],
-      prefs: { pageSize: 100 },
-    });
-    expect(parsed.mastery).toEqual(["ok"]);
-    expect(parsed.prefs.pageSize).toBe(100);
-    expect(parsed.prefs.defaultLevel).toBe(DEFAULT_PREFS.defaultLevel);
-  });
-
-  it("非法输入抛错", () => {
-    expect(() => parseExport("null")).toThrow();
-  });
-});
 
 describe("默认值", () => {
   it("默认 meta 只有偏好与迁移标记", () => {

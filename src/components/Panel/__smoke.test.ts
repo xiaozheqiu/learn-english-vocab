@@ -8,59 +8,30 @@ import {
   BUILD_SHA,
   formatBuildTime,
 } from "./sections/AboutSection";
-import { DataSection } from "./sections/DataSection";
-import { SettingsSection } from "./sections/SettingsSection";
-import { DEFAULT_PREFS } from "@/lib/types";
-import type { VocabStore } from "@/hooks/useVocabStore";
 
-/** 面板 3 个分区的 SSR 冒烟：只验证渲染不抛错、关键文案与数字在位。 */
+/** 面板退化成单页「关于」后的 SSR 冒烟：只验证渲染不抛错、关键文案与数字在位。 */
 
 function render(element: Parameters<typeof renderToStaticMarkup>[0]): string {
   return renderToStaticMarkup(element);
 }
 
-describe("面板分区（§2.3）", () => {
-  it("数据分区给出导出、导入与清空的入口", () => {
-    const html = render(
-      createElement(DataSection, {
-        store: {
-          exportData: async () => ({}),
-          importData: async () => {},
-          wipeProgress: async () => {},
-          refresh: async () => {},
-        } as Pick<VocabStore, "exportData" | "importData" | "wipeProgress" | "refresh">,
-        canInstall: false,
-        onInstall: () => {},
-      }),
-    );
-    expect(html).toContain("导出");
-    expect(html).toContain("导入备份");
-    expect(html).toContain("清空掌握标记");
-    expect(html).toContain("偏好会保留");
-    expect(html).not.toContain("安装应用"); // canInstall=false 时不显示
+describe("关于分区（§2.3）", () => {
+  it("关于分区写明数据来源与版本号", () => {
+    const html = render(createElement(AboutSection, { onOpenGuide: () => {} }));
+    // 版本号来自构建时注入，不写死字面量 —— 否则每次发版都要改测试
+    expect(html).toContain(`v${APP_VERSION}`);
+    expect(html).toContain("5323");
+    expect(html).toContain("本机浏览器");
   });
 
-  it("设置分区只剩词表偏好，学习节奏与锁屏设置已移除", () => {
-    const html = render(
-      createElement(SettingsSection, {
-        prefs: DEFAULT_PREFS,
-        setPrefs: async () => {},
-      }),
-    );
-    expect(html).toContain("每页条数");
-    expect(html).toContain("默认等级");
-    // 已随功能移除的设置项不得回到界面上
-    expect(html).not.toContain("期望留存率");
-    expect(html).not.toContain("自动锁定");
-    expect(html).not.toContain("PIN");
-  });
-
-  it("设置分区带版本检查入口，且不拦着用户自己催一次", () => {
+  it("面板收成单页后，检查更新与安装入口都落在关于里", () => {
     const checked: string[] = [];
+    const installed: string[] = [];
     const html = render(
-      createElement(SettingsSection, {
-        prefs: DEFAULT_PREFS,
-        setPrefs: async () => {},
+      createElement(AboutSection, {
+        onOpenGuide: () => {},
+        canInstall: true,
+        onInstall: () => installed.push("install"),
         update: {
           reloading: false,
           checking: false,
@@ -70,18 +41,17 @@ describe("面板分区（§2.3）", () => {
         },
       }),
     );
-    expect(html).toContain("检查更新");
     expect(html).toContain('data-testid="check-update"');
     expect(html).toContain('data-testid="check-update-status"');
+    expect(html).toContain("安装应用");
     // 没查过时不该编一个「上次检查」出来
     expect(html).not.toContain("上次检查");
   });
 
-  it("检查出「已是最新」时给出明确结论，而不是只说在检查", () => {
+  it("「已是最新」时给出明确结论，不是只说在检查", () => {
     const html = render(
-      createElement(SettingsSection, {
-        prefs: DEFAULT_PREFS,
-        setPrefs: async () => {},
+      createElement(AboutSection, {
+        onOpenGuide: () => {},
         update: {
           reloading: false,
           checking: false,
@@ -94,12 +64,10 @@ describe("面板分区（§2.3）", () => {
     expect(html).toContain("已经是最新版本");
   });
 
-  it("关于分区写明数据来源与版本号", () => {
+  it("不支持安装与不传 update 时，两个入口都不出现", () => {
     const html = render(createElement(AboutSection, { onOpenGuide: () => {} }));
-    // 版本号来自构建时注入，不写死字面量 —— 否则每次发版都要改测试
-    expect(html).toContain(`v${APP_VERSION}`);
-    expect(html).toContain("5323");
-    expect(html).toContain("本机浏览器");
+    expect(html).not.toContain("安装应用");
+    expect(html).not.toContain('data-testid="check-update"');
   });
 
   it("关于分区显示构建标识，便于确认是否拿到最新版", () => {

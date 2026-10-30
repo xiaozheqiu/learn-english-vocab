@@ -118,6 +118,14 @@ export async function openFilter(page) {
   });
 }
 
+/** 打开关于浮窗并等到可交互（面板已收成单页，没有 tab 需要切） */
+export async function openAbout(page) {
+  await page.locator('button[aria-label="关于"]').click();
+  await until(page, async () => (await page.locator('[data-testid="about-sheet"]').count()) > 0, {
+    label: "about sheet open",
+  });
+}
+
 /** 等到词表行数达到期望值 */
 export function waitRows(page, expected) {
   return until(page, async () => (await rowCount(page)) === expected, {
@@ -142,7 +150,7 @@ export async function waitMainShell(page) {
 export const nav = {
   list: (page) => page.getByRole("tab", { name: "词表" }).last(),
   guide: (page) => page.getByRole("tab", { name: "词性对照" }).last(),
-  panel: (page) => page.getByRole("button", { name: "打开学习面板" }),
+  about: (page) => page.getByRole("button", { name: "关于", exact: true }),
   filter: (page) => page.locator('[data-testid="filter-trigger"]'),
   bulk: (page) => page.locator('[data-testid="bulk-fab"]'),
   dialog: (page) => page.getByRole("dialog"),

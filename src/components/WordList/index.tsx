@@ -12,10 +12,10 @@ import {
   loadListView,
   saveListView,
   scopeProgress,
+  type InitialFilter,
   type ListCriteria,
   type ListView,
-  type OxfordFilter,
-  type TierFilter,
+  type PosFilter,
 } from "@/lib/listView";
 import { useSelection } from "@/hooks/useSelection";
 import { usePageActive } from "@/hooks/usePageActive";
@@ -56,12 +56,18 @@ export function WordListPage({ store }: WordListPageProps) {
     setView((current) => ({ ...current, level: store.prefs.defaultLevel, page: 1 }));
   }, [store.prefs.defaultLevel]);
 
-  // 按等级 / 搜索加载分包
+  // 按等级 / 搜索 / 字母加载分包
   // 只依赖稳定的 ensureLevels：依赖整个 store 会在每次 words 变化后重跑，形成自激循环
   const { ensureLevels } = store;
+  /**
+   * 跨等级浏览：搜索与字母筛选都要全库。
+   * 字母筛选是「从一个字母开始通读」的入口，只加载当前等级会让 S 开头的词
+   * 扫完 A1 那几十条就到底了，用户会以为词表就这么多。
+   */
+  const browsing = Boolean(view.query.trim()) || view.initial !== "all";
   useEffect(() => {
-    void ensureLevels(view.query.trim() ? "ALL" : view.level);
-  }, [ensureLevels, view.level, view.query]);
+    void ensureLevels(browsing ? "ALL" : view.level);
+  }, [browsing, ensureLevels, view.level]);
 
   const filtered = useMemo(
     () => filterWords(store.words, view, store.mastered),
@@ -70,21 +76,18 @@ export function WordListPage({ store }: WordListPageProps) {
 
   /**
    * 抽屉里的预览条数：按**草稿**条件算，不吃已生效的条件。
-   * 只读 words / mastered / query，所以搜索框每敲一个字不会连带重算一遍筛选结果。
+   * 只读 words / mastered，所以搜索框每敲一个字不会连带重算一遍筛选结果。
    */
   const countFor = useCallback(
-    (level: LevelFilter, mode: MasteryFilter, tier: TierFilter, oxford: OxfordFilter) => {
-      const criteria: ListCriteria = { level, mode, tier, oxford, query: view.query };
-      return filterWords(store.words, criteria, store.mastered).length;
-    },
-    [store.mastered, store.words, view.query],
+    (criteria: ListCriteria) => filterWords(store.words, criteria, store.mastered).length,
+    [store.mastered, store.words],
   );
 
   /**
    * 板块掌握进度：分母是板块总词数，不吃搜索词与掌握筛选。
-   * 搜索时列表本来就跨等级，进度也跟着报全库，否则数字和列表对不上。
+   * 搜索 / 字母浏览时列表本来就跨等级，进度也跟着报全库，否则数字和列表对不上。
    */
-  const progressScope: LevelFilter = view.query.trim() ? "ALL" : view.level;
+  const progressScope: LevelFilter = browsing ? "ALL" : view.level;
   const progress = useMemo(
     () => scopeProgress(store.words, progressScope, store.mastered),
     [progressScope, store.mastered, store.words],
@@ -123,7 +126,7 @@ export function WordListPage({ store }: WordListPageProps) {
    * 切到别的页面再回来时位置要还在；而翻页 / 换筛选后必须回到顶部 ——
    * 否则从第 3 页翻到第 4 页，人还停在第 3 页中间的位置。 */
   const scroll = useScrollKeeper<HTMLDivElement>(active);
-  const scrollKey = `${view.level}|${view.mode}|${view.tier}|${view.oxford}|${view.query}|${current}`;
+  const scrollKey = `${view.level}|${view.mode}|${view.tier}|${view.oxford}|${view.pos}|${view.initial}|${view.query}|${current}`;
   const lastScrollKey = useRef(scrollKey);
   useEffect(() => {
     if (lastScrollKey.current === scrollKey) return;
@@ -182,6 +185,8 @@ export function WordListPage({ store }: WordListPageProps) {
         mode: next.mode,
         tier: next.tier,
         oxford: next.oxford,
+        pos: next.pos,
+        initial: next.initial,
         page: 1,
       }));
       if (next.pageSize !== pageSize) {
@@ -199,6 +204,8 @@ export function WordListPage({ store }: WordListPageProps) {
       mode: "all",
       tier: "all",
       oxford: "all",
+      pos: "all",
+      initial: "all",
       query: "",
       page: 1,
     }));
@@ -220,6 +227,8 @@ export function WordListPage({ store }: WordListPageProps) {
           mode={view.mode}
           tier={view.tier}
           oxford={view.oxford}
+          pos={view.pos}
+          initial={view.initial}
           defaultLevel={store.prefs.defaultLevel}
           query={view.query}
           pageSize={pageSize}
@@ -277,6 +286,8 @@ export function WordListPage({ store }: WordListPageProps) {
               <EmptyState
                 level={view.level}
                 mode={view.mode}
+                pos={view.pos}
+                initial={view.initial}
                 query={view.query}
                 onReset={resetAll}
               />
@@ -338,15 +349,21 @@ export function WordListPage({ store }: WordListPageProps) {
 function EmptyState({
   level,
   mode,
+  pos,
+  initial,
   query,
   onReset,
 }: {
   level: LevelFilter;
   mode: MasteryFilter;
+  pos: PosFilter;
+  initial: InitialFilter;
   query: string;
   onReset: () => void;
 }) {
-  const scope = level === "ALL" ? "全库" : level;
+  // 浏览态（字母 / 搜索）跨等级，所以文案里报「全库」而不是当前等级，
+  // 否则选 S 开头时提示「A1 里没有符合条件的词」会让人以为词表只有 A1
+  const scope = level === "ALL" || initial !== "all" || query.trim() ? "全库" : level;
   const reason = query
     ? `没有匹配「${query}」的词`
     : mode === "done"
@@ -356,7 +373,11 @@ function EmptyState({
     <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 py-16 text-center">
       <ListFilter className="h-8 w-8 text-ink-mute" aria-hidden="true" />
       <p className="text-[14px] font-medium text-ink">{reason}</p>
-      <p className="text-[13px] text-ink-soft">换个筛选条件，或回到全库继续找。</p>
+      <p className="text-[13px] text-ink-soft">
+        {pos !== "all" || initial !== "all"
+          ? "词性或首字母这一档可能没有词，换个条件再看。"
+          : "换个筛选条件，或回到全库继续找。"}
+      </p>
       <Button variant="outline" size="touch" onClick={onReset}>
         清空筛选
       </Button>

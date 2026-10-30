@@ -11,7 +11,14 @@ import {
   type MasteryFilter,
   type PageSize,
 } from "@/lib/types";
-import type { OxfordFilter, TierFilter } from "@/lib/listView";
+import type {
+  InitialFilter,
+  ListCriteria,
+  OxfordFilter,
+  PosFilter,
+  TierFilter,
+} from "@/lib/listView";
+import { INITIALS } from "@/lib/listView";
 import { cn } from "@/lib/utils";
 
 /** 抽屉里「确定」要一次提交的一整套条件 */
@@ -20,6 +27,8 @@ export interface FilterDraft {
   mode: MasteryFilter;
   tier: TierFilter;
   oxford: OxfordFilter;
+  pos: PosFilter;
+  initial: InitialFilter;
   pageSize: PageSize;
 }
 
@@ -29,17 +38,18 @@ export interface FilterBarProps {
   mode: MasteryFilter;
   tier: TierFilter;
   oxford: OxfordFilter;
+  pos: PosFilter;
+  initial: InitialFilter;
   /** 偏好里的默认等级：和它一致时按钮显示「筛选」而不是一条默认条件 */
   defaultLevel: LevelFilter;
   query: string;
   pageSize: PageSize;
-  /** 按「草稿条件」预览条数，确定之前列表不动 */
-  countFor: (
-    level: LevelFilter,
-    mode: MasteryFilter,
-    tier: TierFilter,
-    oxford: OxfordFilter,
-  ) => number;
+  /**
+   * 按「草稿条件」预览条数，确定之前列表不动。
+   * 传整条判据而不是一串位置参数：维度已经有 6 个，再按位置传必有人把
+   * pos 和 initial 传反，而且加维度时所有调用处都要跟着改。
+   */
+  countFor: (criteria: ListCriteria) => number;
   onQuery: (query: string) => void;
   /** 只有点「确定」才会走到这里 */
   onApply: (next: FilterDraft) => void;
@@ -49,6 +59,24 @@ const MODES: { value: MasteryFilter; label: string }[] = [
   { value: "all", label: "全部" },
   { value: "todo", label: "未掌握" },
   { value: "done", label: "已掌握" },
+];
+
+/**
+ * 抽屉里的词性按钮：缩写 + 中文，按钮上只放缩写（网格装得下 10 个），
+ * 中文靠 aria-label 与下方一行说明补齐。
+ */
+const POS_OPTIONS: { value: PosFilter; label: string; full: string }[] = [
+  { value: "all", label: "全部", full: "全部词性" },
+  { value: "n", label: "n.", full: "名词" },
+  { value: "v", label: "v.", full: "动词" },
+  { value: "adj", label: "adj.", full: "形容词" },
+  { value: "adv", label: "adv.", full: "副词" },
+  { value: "pron", label: "pron.", full: "代词" },
+  { value: "prep", label: "prep.", full: "介词" },
+  { value: "det", label: "det.", full: "限定词（含冠词）" },
+  { value: "number", label: "num.", full: "数词" },
+  { value: "conj", label: "conj.", full: "连词" },
+  { value: "exclam", label: "excl.", full: "感叹词" },
 ];
 
 /**
@@ -68,6 +96,8 @@ export function FilterBar({
   mode,
   tier,
   oxford,
+  pos,
+  initial,
   defaultLevel,
   query,
   pageSize,
@@ -76,14 +106,22 @@ export function FilterBar({
   onApply,
 }: FilterBarProps) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<FilterDraft>({ level, mode, tier, oxford, pageSize });
+  const [draft, setDraft] = useState<FilterDraft>({
+    level,
+    mode,
+    tier,
+    oxford,
+    pos,
+    initial,
+    pageSize,
+  });
   const input = useRef<HTMLInputElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const isDesktop = useIsDesktop();
 
   // 每次打开都从「当前生效的条件」起稿，关上时丢弃草稿的语义才成立
   const onOpenChange = (next: boolean) => {
-    if (next) setDraft({ level, mode, tier, oxford, pageSize });
+    if (next) setDraft({ level, mode, tier, oxford, pos, initial, pageSize });
     setOpen(next);
     if (!next) window.setTimeout(() => trigger.current?.focus(), 0);
   };
@@ -112,15 +150,44 @@ export function FilterBar({
   const levelLabel = level === "ALL" ? "全部等级" : level;
   const modeLabel = MODES.find((item) => item.value === mode)?.label ?? "全部";
   // 「有筛选」只算用户主动加的：把默认等级也算进去的话，一进 App 按钮就自带高亮
-  const filtered = level !== defaultLevel || mode !== "all" || tier !== "all" || oxford !== "all";
+  const filtered =
+    level !== defaultLevel ||
+    mode !== "all" ||
+    tier !== "all" ||
+    oxford !== "all" ||
+    pos !== "all" ||
+    initial !== "all";
   // 草稿和已生效不同：抽屉里提示一句，免得以为已经生效了
   const pending =
     draft.level !== level ||
     draft.mode !== mode ||
     draft.tier !== tier ||
     draft.oxford !== oxford ||
+    draft.pos !== pos ||
+    draft.initial !== initial ||
     draft.pageSize !== pageSize;
-  const draftTotal = countFor(draft.level, draft.mode, draft.tier, draft.oxford);
+  const draftTotal = countFor({
+    level: draft.level,
+    mode: draft.mode,
+    tier: draft.tier,
+    oxford: draft.oxford,
+    pos: draft.pos,
+    initial: draft.initial,
+    query,
+  });
+
+  /*
+   * 按钮上按「信息密度」取舍：等级必印，掌握状态只在非全选时印，
+   * 词性 / 字母各占一小格。全塞进去会被 max-w 截断成一串省略号，
+   * 所以容器给到 10rem，靠 truncate 兜住极端组合（等级 + 词性 + 字母）。
+   */
+  const extraLabels = [
+    pos !== "all" ? (POS_OPTIONS.find((item) => item.value === pos)?.label ?? pos) : "",
+    initial !== "all" ? `${initial.toUpperCase()} 开头` : "",
+  ].filter(Boolean);
+  const triggerText = filtered
+    ? [levelLabel, mode !== "all" ? modeLabel : "", ...extraLabels].filter(Boolean).join(" · ")
+    : "筛选";
 
   return (
     <section aria-label="词表筛选" className="border-b border-line bg-card/80">
@@ -136,9 +203,7 @@ export function FilterBar({
           aria-expanded={open}
         >
           <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
-          <span className="max-w-[7.5rem] truncate">
-            {filtered ? `${levelLabel} · ${modeLabel}` : "筛选"}
-          </span>
+          <span className="max-w-[10rem] truncate">{triggerText}</span>
           {filtered && (
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" aria-hidden="true" />
           )}
@@ -180,7 +245,7 @@ export function FilterBar({
           side={isDesktop ? "center" : "bottom"}
           className={cn(isDesktop && "max-w-sm")}
         >
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-1">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-1">
             <DialogTitle className="text-[16px] font-semibold text-ink">筛选</DialogTitle>
             <SheetDescription
               data-testid="filter-preview"
@@ -307,6 +372,97 @@ export function FilterBar({
               </p>
             </section>
 
+            {/*
+              词性：源数据里有 81 种写法（`n.,adj.`、`det./pron./adv.`、`modal v.` …），
+              直接铺开会变成 81 个格子。这里只露出 10 个真正会用的类别，
+              混合词性按「命中任一」算 —— book 在名词和动词下都能筛到。
+              细类映射见 lib/listView.ts 的 POS_ALIASES。
+            */}
+            <section className="mt-4" aria-labelledby="filter-pos-title">
+              <h3 id="filter-pos-title" className="text-[13px] font-medium text-ink">
+                词性
+              </h3>
+              <div
+                data-testid="filter-pos"
+                role="group"
+                aria-labelledby="filter-pos-title"
+                className="mt-1.5 grid grid-cols-4 gap-1.5"
+              >
+                {POS_OPTIONS.map((item) => (
+                  <Button
+                    key={item.value}
+                    size="touch"
+                    variant={draft.pos === item.value ? "subtle" : "outline"}
+                    aria-pressed={draft.pos === item.value}
+                    aria-label={item.full}
+                    title={item.full}
+                    onClick={() => setDraft((current) => ({ ...current, pos: item.value }))}
+                    className={cn(
+                      "w-full px-0",
+                      draft.pos === item.value && "border-brand/40 font-medium",
+                    )}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                一个词兼多个词性时，每个类别下都会出现；det. 含冠词，modal v. / auxiliary v.
+                归入动词。
+              </p>
+            </section>
+
+            {/*
+              首字母：按开头浏览整张表。
+              这条和搜索一样**跨等级**——想「把 S 开头的词过一遍」时，
+              被「当前停在 A1」再切一刀就失去了意义。
+              没有 X 开头的词（5323 条已核），所以按钮里不给 X。
+            */}
+            <section className="mt-4" aria-labelledby="filter-initial-title">
+              <h3 id="filter-initial-title" className="text-[13px] font-medium text-ink">
+                首字母
+              </h3>
+              <div
+                data-testid="filter-initial"
+                role="group"
+                aria-labelledby="filter-initial-title"
+                className="mt-1.5 flex flex-wrap gap-1.5"
+              >
+                <Button
+                  size="touch"
+                  variant={draft.initial === "all" ? "subtle" : "outline"}
+                  aria-pressed={draft.initial === "all"}
+                  aria-label="全部字母"
+                  onClick={() => setDraft((current) => ({ ...current, initial: "all" }))}
+                  className={cn(
+                    "min-w-[3.25rem] flex-1 px-0",
+                    draft.initial === "all" && "border-brand/40 font-medium",
+                  )}
+                >
+                  全部
+                </Button>
+                {INITIALS.map((letter) => (
+                  <Button
+                    key={letter}
+                    size="touch"
+                    variant={draft.initial === letter ? "subtle" : "outline"}
+                    aria-pressed={draft.initial === letter}
+                    aria-label={`${letter.toUpperCase()} 开头`}
+                    onClick={() => setDraft((current) => ({ ...current, initial: letter }))}
+                    className={cn(
+                      "min-w-[2.5rem] flex-1 px-0 uppercase tnum",
+                      draft.initial === letter && "border-brand/40 font-medium",
+                    )}
+                  >
+                    {letter}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                选字母时跨全部等级（不叠加等级条件），方便从一个字母开始通读。
+              </p>
+            </section>
+
             <section className="mt-4" aria-labelledby="filter-mode-title">
               <h3 id="filter-mode-title" className="text-[13px] font-medium text-ink">
                 掌握状态
@@ -362,8 +518,16 @@ export function FilterBar({
                 ))}
               </div>
             </section>
+          </div>
 
-            <div className="mt-5 flex gap-2">
+          {/*
+            操作条固定在抽屉底部，不跟着条件列表滚。
+            条件从 5 组涨到 7 组之后，抽屉内容比 85vh 高出一截：
+            底部那两个按钮原本在滚动区最下面，手机上要先滑过整个字母表
+            才够得着「确定」——「点确定才生效」这个前提被埋掉了。
+          */}
+          <div className="shrink-0 border-t border-line bg-card px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
+            <div className="flex gap-2">
               <Button
                 data-testid="filter-reset"
                 size="touch"
@@ -376,6 +540,8 @@ export function FilterBar({
                     mode: "all",
                     tier: "all",
                     oxford: "all",
+                    pos: "all",
+                    initial: "all",
                     pageSize: current.pageSize,
                   }))
                 }
