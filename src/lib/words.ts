@@ -130,15 +130,23 @@ async function importLevel(level: Level): Promise<readonly RawRow[]> {
   return mod.default;
 }
 
-export async function loadLevel(level: Level): Promise<Word[]> {
-  const hit = cache.get(level);
-  if (hit) return hit;
-  const [rows, ranks, oxford] = await Promise.all([
-    importLevel(level),
-    loadTierOrder(),
-    loadOxfordIndex(),
-  ]);
-  const words = buildKeys(level, rows);
+/**
+ * 已经补过 rank / tier / 牛津标记的等级。
+ *
+ * 词条进缓存时可能还是「裸的」（只有单词与词性），索引文件（tiers / oxford）
+ * 随后才到。这张表记的是「补没补」，不是「载没载」—— 两者解耦之后，首屏才能
+ * 只解析一个等级的字面量，不必等那 228KB 的索引。
+ */
+const enrichedLevels = new Set<Level>();
+
+/**
+ * 给一组词条补上 rank / tier / 牛津标记。
+ *
+ * 就地改 `Word` 对象：这些对象与缓存里是同一份引用，补完所有持有者立刻可见；
+ * 也正因为是同一份引用，调用方要自己换一次数组引用来通知 React。
+ */
+async function enrich(words: Word[]): Promise<void> {
+  const [ranks, oxford] = await Promise.all([loadTierOrder(), loadOxfordIndex()]);
   for (const word of words) {
     const info = ranks.get(word.key);
     word.rank = info?.rank ?? 0;
@@ -147,11 +155,33 @@ export async function loadLevel(level: Level): Promise<Word[]> {
     word.ox3000 = rec?.ox3000 ?? false;
     word.ox5000 = rec?.ox5000 ?? false;
   }
-  cache.set(level, words);
+}
+
+/**
+ * 载入一个等级。
+ *
+ * `withIndexes: false` 是首屏专用的快路径：只 import 这一个等级的分包、建好主键
+ * 就交出去，不碰 tiers / oxford。默认视图那一屏（A1，900 条）立刻能画，
+ * 其余等级与索引交给空闲时段（见 useVocabStore）。
+ *
+ * 代价：补齐前 rank / tier / 牛津标记还是默认值（rank=0、tier=core、标记全 false）。
+ * 默认视图下档位与牛津两档不生效，看不出来；但用户持久化的视图可能正开着它们，
+ * 那种情况下调用方必须传 true，否则会先画出一份错的筛选结果。
+ */
+export async function loadLevel(level: Level, withIndexes = true): Promise<Word[]> {
+  let words = cache.get(level);
+  if (!words) {
+    words = buildKeys(level, await importLevel(level));
+    cache.set(level, words);
+  }
+  if (withIndexes && !enrichedLevels.has(level)) {
+    await enrich(words);
+    enrichedLevels.add(level);
+  }
   return words;
 }
 
-/** 搜索需要跨等级，带进度回调 */
+/** 搜索需要跨等级，带进度回调。走过的等级一律补齐索引。 */
 export async function loadAll(onProgress?: (done: number, total: number) => void): Promise<Word[]> {
   let done = 0;
   const groups = await Promise.all(

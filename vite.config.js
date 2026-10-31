@@ -111,8 +111,17 @@ export default defineConfig(({ command }) => {
       outDir: "dist",
       rollupOptions: {
         output: {
+          /**
+           * 只把真正的 react / react-dom 收进 "react" 分包。
+           *
+           * 原来是 `id.includes("node_modules/react")` —— 子串匹配把 react-markdown
+           * 及其依赖（micromark、mdast-util-*、hast-util-to-jsx-runtime、remark-gfm）
+           * 全部算成 "react"，而这个 chunk 由 index.html 的 modulepreload 首屏必拉。
+           * 结果：首屏白下载、白编译约 40KB gz 的 Markdown 解析器，只为「词性对照」
+           * 那一页服务。词性对照本身已改成懒加载（见 App.tsx），两边配合才成立。
+           */
           manualChunks(id) {
-            if (id.includes("node_modules/react")) return "react";
+            if (/node_modules[\\/]react(-dom)?[\\/]/.test(id)) return "react";
           },
         },
       },

@@ -302,9 +302,12 @@ async function saveMigratedFlag(): Promise<void> {
 /**
  * 首次启动读旧 localStorage → 写入 mastery，旧键保留作备份。
  * 返回导入的条数；已迁移过则返回 0。
+ *
+ * `existing`：调用方已经读过的快照。启动时上层本来就为渲染读了一次全表，
+ * 这里再读一遍只是重复劳动（已掌握 5323 条时多花约 100ms），传进来即可。
  */
-export async function migrateLegacy(): Promise<number> {
-  const snapshot = await loadSnapshot();
+export async function migrateLegacy(existing?: Snapshot): Promise<number> {
+  const snapshot = existing ?? (await loadSnapshot());
   if (snapshot.meta.migratedFromLocal) return 0;
 
   let legacy: string[] = [];

@@ -21,7 +21,7 @@ import { useSelection } from "@/hooks/useSelection";
 import { usePageActive } from "@/hooks/usePageActive";
 import { useScrollKeeper } from "@/hooks/useScrollKeeper";
 import type { VocabStore } from "@/hooks/useVocabStore";
-import type { LevelFilter, MasteryFilter, PageSize } from "@/lib/types";
+import { LEVELS, type LevelFilter, type MasteryFilter, type PageSize } from "@/lib/types";
 
 export interface WordListPageProps {
   store: VocabStore;
@@ -100,17 +100,29 @@ export function WordListPage({ store }: WordListPageProps) {
   );
 
   /*
-   * 页码越界（筛选变了 / 每页条数变小）时收回来。
+   * 当前视图要的等级，数据是不是已经进了 state。
    *
-   * 必须等词表加载完再收敛：首帧 filtered 还是空数组，pages 算出来是 1，
-   * 这里会把持久化恢复出来的 page:3 当场改成 1 —— 表现为「刷新后回到第 1 页」。
-   * 加载完成前 pages 没有意义，跳过即可。
+   * 判据必须看 `store.words`，不能看 `isLoaded()`：后者在模块 import 完成时就
+   * 变 true，而 setWords 要到下一轮渲染才生效 —— 中间那一帧 filtered 仍是空，
+   * 页码会被当成越界夹回第 1 页，持久化的第 3 页当场丢失。
+   *
+   * 看 state 就没有这个时间差：state 里有这个等级的词，才可能存在「有结果但被
+   * 判成空」的情况。首屏只加载默认等级（见 useVocabStore），所以停在 A2 的人
+   * 刷新时会先显示加载态，等 A2 真到了再判定页码与空态。
    */
-  const listLoaded = !store.loadingWords || store.words.length > 0;
+  const loadedLevels = useMemo(() => {
+    const levels = new Set<string>();
+    for (const word of store.words) levels.add(word.level);
+    return levels;
+  }, [store.words]);
+  const scopeLoaded =
+    searching || view.level === "ALL"
+      ? LEVELS.every((level) => loadedLevels.has(level))
+      : loadedLevels.has(view.level);
   useEffect(() => {
-    if (!listLoaded) return;
+    if (!scopeLoaded) return;
     if (view.page > pages) setView((value) => ({ ...value, page: pages }));
-  }, [listLoaded, pages, view.page]);
+  }, [scopeLoaded, pages, view.page]);
 
   const setPage = useCallback((page: number) => {
     setView((value) => ({ ...value, page: Math.max(1, page) }));
@@ -169,8 +181,15 @@ export function WordListPage({ store }: WordListPageProps) {
     [store.toggleMastery],
   );
 
-  const loading = store.loadingWords && store.words.length === 0;
-  const empty = !store.loadingWords && filtered.length === 0;
+  /**
+   * 加载态看的是「当前视图那个等级到了没」，不是「有没有任何词」。
+   *
+   * 首屏只加载默认等级，停在 A2 的人刷新时 words 里只有 A1 —— 此时结果为空
+   * 是「还没加载」，不是「A2 里没有符合条件的词」。用 store.loadingWords 判断
+   * 更不行：A1 一到手它就落了 false，于是会先闪一屏空态。
+   */
+  const loading = !scopeLoaded;
+  const empty = scopeLoaded && filtered.length === 0;
 
   /**
    * 「确定」才生效：等级 / 掌握状态 / 每页条数一次性提交，页码回到第 1 页。

@@ -528,8 +528,17 @@ try {
   await until(page, async () => (await page.evaluate(() => location.hash)) === "#/guide", {
     label: "guide route",
   });
-  const guideText = await page.locator("main").innerText();
-  report.check("guide.renders", guideText.length > 50, `${guideText.length} chars`);
+  // 词性对照是懒加载模块（首屏不再包含 Markdown 解析器），渲染要等模块到位。
+  // 与桌面那条（desktop.guideTabWorks）保持同一判据：等正文，不用固定 sleep。
+  const mobileGuideChars = await until(
+    page,
+    async () => {
+      const len = (await page.locator("main").innerText()).length;
+      return len > 50 ? len : 0;
+    },
+    { label: "guide rendered" },
+  );
+  report.check("guide.renders", mobileGuideChars > 50, `${mobileGuideChars} chars`);
 
   await page.getByRole("button", { name: /返回词表/ }).click();
   await until(page, async () => (await page.evaluate(() => location.hash)) === "#/", {
