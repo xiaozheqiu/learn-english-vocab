@@ -9,7 +9,7 @@
  * 变量，vitest 默认按文件隔离模块注册表，同文件内先后顺序会互相污染。
  */
 import { describe, expect, it } from "vitest";
-import { cachedAll, isLoaded, loadAll, loadLevel } from "../words";
+import { cachedAll, enrichAll, indexesReady, isLoaded, loadAll, loadLevel } from "../words";
 
 describe("首屏快路径", () => {
   it("withIndexes=false 只建主键，不碰 tiers / oxford", async () => {
@@ -47,5 +47,15 @@ describe("全量加载", () => {
     const seen: number[] = [];
     await loadAll((done) => seen.push(done));
     expect([...seen].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+describe("索引就绪判定", () => {
+  it("补齐后 indexesReady() 为真，enrichAll 幂等", async () => {
+    const first = await enrichAll();
+    expect(indexesReady()).toBe(true);
+    const second = await enrichAll();
+    // 幂等：再调一次不重建数组，也不改内容
+    expect(second).toEqual(first);
   });
 });

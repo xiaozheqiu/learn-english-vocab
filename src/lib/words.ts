@@ -195,6 +195,29 @@ export async function loadAll(onProgress?: (done: number, total: number) => void
   return groups.flat();
 }
 
+/**
+ * 把已进缓存的等级全部补齐索引，并把合并后的词表交回去。
+ *
+ * 首屏快路径只载一个等级、不碰索引，所以「档位 / 牛津」这两档在补齐之前
+ * 拿不到真值（tier 一律是默认的 core、两个标记全 false）。任何要读这两维的
+ * 地方都必须先过这里 —— 否则 A1 会显示「认脸档 0 条」这种看着像真空结果的错。
+ */
+export async function enrichAll(): Promise<Word[]> {
+  for (const level of LEVELS) {
+    const words = cache.get(level);
+    if (words && !enrichedLevels.has(level)) {
+      await enrich(words);
+      enrichedLevels.add(level);
+    }
+  }
+  return cachedAll();
+}
+
+/** 已加载的等级是否都补过索引（供界面判断「档位/牛津筛选能不能信」） */
+export function indexesReady(): boolean {
+  return LEVELS.every((level) => !cache.has(level) || enrichedLevels.has(level));
+}
+
 /** 已加载的等级（同步读取，供需要立刻渲染的场景） */
 export function cachedAll(): Word[] {
   return LEVELS.flatMap((level) => cache.get(level) ?? []);

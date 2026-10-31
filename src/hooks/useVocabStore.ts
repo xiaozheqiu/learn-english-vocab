@@ -13,7 +13,7 @@ import {
   saveMastery,
   savePrefs as dbSavePrefs,
 } from "@/lib/db";
-import { cachedAll, isLoaded, loadAll, loadLevel } from "@/lib/words";
+import { cachedAll, enrichAll, indexesReady, isLoaded, loadAll, loadLevel } from "@/lib/words";
 import { LIST_VIEW_KEY } from "@/lib/listView";
 import {
   DEFAULT_PREFS,
@@ -66,8 +66,11 @@ export interface VocabStore {
   memoryMode: boolean;
   loadError: string;
   loadingWords: boolean;
+  /** rank / tier / 牛津标记补齐了没；档位与牛津筛选只在这之后才可信 */
+  indexesReady: boolean;
 
   ensureLevels: (target: LevelFilter) => Promise<void>;
+  ensureIndexes: () => Promise<void>;
   toggleMastery: (keys: readonly string[], mastered: boolean) => Promise<void>;
   setPrefs: (patch: Partial<Prefs>) => Promise<void>;
 }
@@ -80,6 +83,7 @@ export function useVocabStore(): VocabStore {
   const [memoryMode, setMemoryMode] = useState(isMemoryMode);
   const [loadError, setLoadError] = useState("");
   const [loadingWords, setLoadingWords] = useState(true);
+  const [indexesReadyState, setIndexesReadyState] = useState(indexesReady);
 
   /* ── 初始化 ──────────────────────────────────────────────── */
   useEffect(() => {
@@ -211,6 +215,7 @@ export function useVocabStore(): VocabStore {
       try {
         const all = await loadAll();
         setWords((current) => (sameWords(current, all) ? current : all));
+        setIndexesReadyState(true);
       } finally {
         setLoadingWords(false);
       }
@@ -227,9 +232,27 @@ export function useVocabStore(): VocabStore {
     try {
       const level = await loadLevel(target as Level);
       setWords((current) => mergeWords(current, level));
+      setIndexesReadyState(indexesReady());
     } finally {
       setLoadingWords(false);
     }
+  }, []);
+
+  /**
+   * 补齐索引（幂等）。
+   *
+   * 档位 / 牛津筛选、以及按 rank 排序都读 rank/tier/oxford，而首屏快路径
+   * 故意没载那两个索引文件。所以任何要动这两维的入口都先 await 这里，
+   * 而不是指望「空闲补全大概已经跑完了」。
+   */
+  const ensureIndexes = useCallback(async () => {
+    if (indexesReady()) {
+      setIndexesReadyState(true);
+      return;
+    }
+    const all = await enrichAll();
+    setWords((current) => (sameWords(current, all) ? current : all));
+    setIndexesReadyState(true);
   }, []);
 
   /* ── 写入 ────────────────────────────────────────────────── */
@@ -274,7 +297,9 @@ export function useVocabStore(): VocabStore {
       memoryMode,
       loadError,
       loadingWords,
+      indexesReady: indexesReadyState,
       ensureLevels,
+      ensureIndexes,
       toggleMastery,
       setPrefs,
     }),
@@ -286,7 +311,9 @@ export function useVocabStore(): VocabStore {
       memoryMode,
       loadError,
       loadingWords,
+      indexesReadyState,
       ensureLevels,
+      ensureIndexes,
       toggleMastery,
       setPrefs,
     ],

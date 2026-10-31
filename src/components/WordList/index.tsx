@@ -68,6 +68,18 @@ export function WordListPage({ store }: WordListPageProps) {
     void ensureLevels(searching ? "ALL" : view.level);
   }, [ensureLevels, searching, view.level]);
 
+  /**
+   * 视图带档位 / 牛津条件时，索引必须补齐后才算数。
+   *
+   * 这是持久化视图的兜底：用户上次停在「认脸档」，刷新时首屏快路径给的
+   * tier 全是默认 core，不等索引就会先闪一屏「0 条」。
+   */
+  const { ensureIndexes } = store;
+  useEffect(() => {
+    if (view.tier === "all" && view.oxford === "all") return;
+    void ensureIndexes();
+  }, [ensureIndexes, view.tier, view.oxford]);
+
   const filtered = useMemo(
     () => filterWords(store.words, view, store.mastered),
     [store.mastered, store.words, view],
@@ -115,10 +127,16 @@ export function WordListPage({ store }: WordListPageProps) {
     for (const word of store.words) levels.add(word.level);
     return levels;
   }, [store.words]);
+  /**
+   * 档位 / 牛津这两维读的是索引，索引没补齐时它们的结果不可信 ——
+   * 那种情况一律当「还没加载」，宁可多转一秒圈，也不要先报一个假的「0 条」。
+   */
+  const viewNeedsIndexes = view.tier !== "all" || view.oxford !== "all";
   const scopeLoaded =
-    searching || view.level === "ALL"
+    (!viewNeedsIndexes || store.indexesReady) &&
+    (searching || view.level === "ALL"
       ? LEVELS.every((level) => loadedLevels.has(level))
-      : loadedLevels.has(view.level);
+      : loadedLevels.has(view.level));
   useEffect(() => {
     if (!scopeLoaded) return;
     if (view.page > pages) setView((value) => ({ ...value, page: pages }));
@@ -197,6 +215,15 @@ export function WordListPage({ store }: WordListPageProps) {
    */
   const onApplyFilter = useCallback(
     (next: FilterDraft) => {
+      /**
+       * 档位 / 牛津这两档只读 rank / tier / oxford 三个字段，而首屏快路径
+       * （只载默认等级、不载索引）会把它们留成默认值 —— 那时切到「认脸档」
+       * 会得到 0 条，看着像「真的没有」，其实只是索引还没到。
+       * 所以只要提交的条件用到这两维，先等索引补齐再落地视图。
+       */
+      const needsIndexes = next.tier !== "all" || next.oxford !== "all";
+      if (needsIndexes) void store.ensureIndexes();
+
       setView((value) => ({
         ...value,
         level: next.level,
