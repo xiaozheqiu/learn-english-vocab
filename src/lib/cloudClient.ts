@@ -58,6 +58,19 @@ export async function currentUserId(): Promise<string | null> {
   return data.session?.user.id ?? null;
 }
 
+/**
+ * 当前 access token。
+ *
+ * 给「页面正在关闭时用原生 fetch + keepalive 补推」那条路径用的：
+ * supabase-js 的链式调用不暴露 `keepalive`，必须自己拼请求头。
+ */
+export async function currentAccessToken(): Promise<string | null> {
+  const db = supabase();
+  if (!db) return null;
+  const { data } = await db.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 export async function isSignedIn(): Promise<boolean> {
   return (await currentUserId()) !== null;
 }

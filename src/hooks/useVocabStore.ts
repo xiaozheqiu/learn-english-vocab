@@ -22,6 +22,7 @@ import {
   sameMastery,
   type CloudState,
 } from "@/lib/cloud";
+import { clearPending, enqueuePending, readPending } from "@/lib/pendingPush";
 import {
   DEFAULT_PREFS,
   LEGACY_MASTERED_KEY,
@@ -157,6 +158,28 @@ export function useVocabStore(): VocabStore {
       const local = await loadSnapshot();
       const { merged, upload } = mergeMastery(local.mastery, remote);
 
+      /**
+       * 把待推队列里的 key 一并纳入这一轮回写。
+       *
+       * 队列记的是「上次没推成功」的 key。它们可能已经在云端有行（比如上一轮
+       * 其实写成功了、只是页面在响应回来之前被关掉），mergeMastery 因此不会
+       * 把它们放进 upload —— 但它们的云端状态仍可能是旧的，而且更重要的是：
+       * 不推就永远销不了账，每次打开都会重推一遍。
+       *
+       * 并集去重后按「云端与实际状态的差异」分流：云端没有、或值不同的照常走
+       * upload；云端已经一致的直接销账，不发请求。
+       */
+      const queued = readPending();
+      const needPush = new Set(upload);
+      const resolved: string[] = [];
+      for (const key of queued) {
+        const row = remote.get(key);
+        const localHas = merged.has(key);
+        if (!row || row.mastered !== localHas) needPush.add(key);
+        else resolved.push(key);
+      }
+      if (resolved.length) clearPending(resolved);
+
       if (!sameMastery(merged, local.mastery)) {
         // 云端更新的部分落地：内存与 IndexedDB 一起改，否则刷新就丢
         const added = [...merged].filter(([key]) => !local.mastery.has(key));
@@ -167,15 +190,31 @@ export function useVocabStore(): VocabStore {
         setMastered(merged);
       }
 
-      // 本地更新、或云端还没有的，回写。失败不影响已经落地的合并结果。
-      if (upload.length) {
-        const stamps = await cloud.push(upload, true);
-        if (stamps && aliveRef.current) {
-          setMastered((current) => {
-            const next = new Map(current);
-            for (const [key, at] of stamps) if (next.has(key)) next.set(key, at);
-            return next;
-          });
+      // 按「实际状态」拆成两批发：已掌握的一批、取消掌握（墓碑）的一批
+      const pushTrue = [...needPush].filter((key) => merged.has(key));
+      const pushFalse = [...needPush].filter((key) => !merged.has(key));
+
+      if (pushTrue.length || pushFalse.length) {
+        const stampsTrue = pushTrue.length
+          ? ((await cloud.push(pushTrue, true)) ?? new Map<string, number>())
+          : new Map<string, number>();
+        const stampsFalse = pushFalse.length
+          ? ((await cloud.push(pushFalse, false)) ?? new Map<string, number>())
+          : new Map<string, number>();
+        const stamps = new Map<string, number>([...stampsTrue, ...stampsFalse]);
+        if (stamps.size) {
+          /**
+           * 推成功的 key 一律销账。队列是「跟云端不一致」的记号，一致了就该消失 ——
+           * 不销账的话，下次打开会为同一批 key 再推一遍。
+           */
+          clearPending([...stamps.keys()]);
+          if (aliveRef.current) {
+            setMastered((current) => {
+              const next = new Map(current);
+              for (const [key, at] of stamps) if (next.has(key)) next.set(key, at);
+              return next;
+            });
+          }
         }
       }
 
@@ -191,6 +230,98 @@ export function useVocabStore(): VocabStore {
   const runCloudSync = useCallback(async () => {
     await syncRef.current();
   }, []);
+
+  /**
+   * 把队列里积压的 key 补推上去。
+   *
+   * 每条 key 的「已掌握」状态现读 IndexedDB —— 队列只记「这个 key 需要推」，
+   * 不记值，所以同一个词被反复开合也只有一次推送，不会出现顺序错乱。
+   *
+   * `keepalive: true` 让浏览器在页面卸载过程中也把请求发完（fetch 的标准选项，
+   * supabase-js 不暴露它，所以这里为了保命走原生 fetch —— 见 flushPendingNow）。
+   */
+  const flushPending = useCallback(async () => {
+    if (!cloudEnabled) return;
+    const pending = readPending();
+    if (pending.size === 0) return;
+    try {
+      const mod = await loadCloudClient();
+      const local = await loadSnapshot();
+      const toTrue = [...pending].filter((key) => local.mastery.has(key));
+      const toFalse = [...pending].filter((key) => !local.mastery.has(key));
+      let ok = true;
+      if (toTrue.length) ok = (await mod.push(toTrue, true)) !== null && ok;
+      if (toFalse.length) ok = (await mod.push(toFalse, false)) !== null && ok;
+      if (ok) {
+        clearPending(pending);
+        if (aliveRef.current) setCloud("synced");
+      }
+    } catch {
+      // 补推失败不入 error：正常的那次推送可能已经成功，别用一个兜底路径惊动用户
+    }
+  }, []);
+
+  /**
+   * 页面进入后台 / 被关掉时，用原生 fetch + keepalive 把积压补出去。
+   *
+   * 为什么不用 supabase-js：它的 fetch 包装没有暴露 `keepalive`，而普通请求
+   * 在 `visibilitychange → hidden` 之后随时可能被掐断 —— 那正是我们要救的场景。
+   * 这里直接拼 REST 请求，只带已经在内存里的 session token。
+   */
+  const flushPendingNow = useCallback(() => {
+    if (!cloudEnabled) return;
+    const pending = readPending();
+    if (pending.size === 0) return;
+    const base = import.meta.env.VITE_SUPABASE_URL;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!base || !key) return;
+
+    void (async () => {
+      try {
+        const mod = await loadCloudClient();
+        const uid = await mod.currentUserId();
+        if (!uid) return;
+        const token = await mod.currentAccessToken();
+        if (!token) return;
+        const local = await loadSnapshot();
+        const rows = [...pending].map((word_key) => ({
+          user_id: uid,
+          word_key,
+          mastered: local.mastery.has(word_key),
+        }));
+        const res = await fetch(`${base}/rest/v1/mastery`, {
+          method: "POST",
+          keepalive: true,
+          headers: {
+            apikey: key,
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            Prefer: "resolution=merge-duplicates",
+          },
+          body: JSON.stringify(rows),
+        });
+        if (res.ok) clearPending(pending);
+      } catch {
+        // 页面正在关闭，失败也没人能处理；队列留着下次补
+      }
+    })();
+  }, []);
+
+  /**
+   * 三个触发点：启动时补一次积压、页面隐藏时抢救、回到前台时对齐。
+   *
+   * 回到前台也叫一次同步，是因为另一台设备可能刚改过 —— 用户切回来那一刻
+   * 本来就该看到最新的。
+   */
+  useEffect(() => {
+    if (!cloudEnabled) return;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flushPendingNow();
+      else void flushPending();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [flushPending, flushPendingNow]);
 
   // 卸载后回来的网络响应不再 setState
   useEffect(() => {
@@ -254,6 +385,9 @@ export function useVocabStore(): VocabStore {
         // 云端对齐放在最后、且不 await：首屏已经该渲染的都渲染了。
         // 走 ref 而不是 runCloudSync：这个 effect 只该跑一次，把回调塞进依赖
         // 列表会让「初始化」变成可重跑的，那不是这里要的语义。
+        //
+        // 同步本身会把「本地有、云端没有」的 key 推上去，队列里的积压因此
+        // 顺带被消化 —— 不需要额外再调一次 flushPending。
         if (alive) void syncRef.current();
       } catch (error) {
         if (alive) setLoadError(String(error));
@@ -404,10 +538,16 @@ export function useVocabStore(): VocabStore {
      * 未登录 / 未配置时 push 自己会立刻返回，这里不需要额外判断。
      */
     if (cloudEnabled) {
+      // 先记账再发请求：那次请求完全可能在页面被关掉时被浏览器掐断，
+      // 记在 localStorage 里的这一笔就是下次启动补推的依据。
+      enqueuePending(keys);
       void loadCloudClient()
         .then((mod) => mod.push(keys, value))
         .then((stamps) => {
-          if (!stamps || !aliveRef.current) return;
+          if (!stamps) return;
+          // 推送成功才销账
+          clearPending(keys);
+          if (!aliveRef.current) return;
           setCloud("synced");
           // 用服务端时间替换本地时间戳，避免下次合并时两边反复打架
           setMastered((current) => {
@@ -417,7 +557,8 @@ export function useVocabStore(): VocabStore {
           });
         })
         .catch(() => {
-          // 云端失败只影响多设备同步，本地进度已经安全落盘，不打扰用户
+          // 云端失败只影响多设备同步，本地进度已经安全落盘，不打扰用户。
+          // 队列不动：下次打开（或页面隐藏时的补推）会重试。
           if (aliveRef.current) setCloud("error");
         });
     }

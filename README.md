@@ -212,10 +212,26 @@ npm run dev
 时不传。手机和电脑时钟差几分钟是常态，用各自 `Date.now()` 当裁判会出现
 「刚标的被旧数据覆盖」。
 
+**标记即同步，但队列要能扛住「点完就关」。** 点一个词就推一次，不让人再点按钮；
+推送是 `void` 的异步请求（否则每个词都要等一次网络往返，弱网下没法用），代价是
+点完立刻关页面时那次请求可能被浏览器掐断。所以 `lib/pendingPush.ts` 用
+localStorage 记一笔「这个 key 与云端不一致」，推成功才销账：
+
+- 页面隐藏 / 关闭 → 原生 `fetch` + `keepalive` 抢救一次（supabase-js 不暴露
+  `keepalive`，普通请求在 `hidden` 之后随时可能被丢弃，那正是要救的场景）
+- 下次打开 → 启动时的同步会把队列并入回写，顺带消化
+- 队列只存 key、不存值，实际状态以 IndexedDB 为准，所以同一个词反复开合
+  只留一条，不会出现「先推 true 再推 false」的顺序问题
+
+**销账这一步不能漏。** 踩过一次：弱网下标记的词留在队列里，下次打开虽然被合并
+逻辑补推成功、云端也确实有了，但队列没清 —— 于是每次打开都为同一批 key 白推一遍。
+`syncRef` 里显式把队列并入 `needPush`，推成的 key 全部 `clearPending`。
+
 `cloud.ts`（轻，含合并规则与 `enabled` 判定）与 `cloudClient.ts`（重，含
 supabase-js）是刻意分开的：后者由前者动态 import。supabase-js 约 55KB gzip，
 静态引入会让每个没登录的人替它付下载与解析成本 —— 和被移出首屏的 Markdown
-解析器（40KB）是同一笔账。合并规则是纯函数，`cloud.test.ts` 逐条钉住。
+解析器（40KB）是同一笔账。合并规则是纯函数，`cloud.test.ts` 逐条钉住；
+队列的持久化与降级行为由 `pendingPush.test.ts` 钉住。
 
 免费项目 **7 天无活动会被暂停**，要手动 resume。`.github/workflows/supabase-keepalive.yml`
 每 3 天打一次最便宜的查询保活；没配 secret 时静默跳过，fork 不会因此变红。
