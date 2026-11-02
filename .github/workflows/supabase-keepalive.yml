@@ -1,0 +1,45 @@
+name: Supabase keep-alive
+
+# 免费项目的致命短板：7 天没有活动就被暂停，要手动去控制台 resume。
+# 这个应用恰好是「想起来才学一次」的用法，不保活的话，放假回来第一次
+# 打开会同步失败，而且报的是 auth/网络错误 —— 根本不会想到是项目被暂停了。
+#
+# 每 3 天打一次库里最便宜的一次查询，就能把「最后活动时间」推回 7 天以内。
+# 比每天跑更省额度，也比踩线更稳（少跑一次也不会断）。
+on:
+  schedule:
+    - cron: "0 3 */3 * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query mastery table
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          # 没有配置 secret 时静默跳过：fork 与本地仓库不该因为这个变红
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "未配置 SUPABASE_URL / SUPABASE_ANON_KEY，跳过"
+            exit 0
+          fi
+
+          # head + count 只取行数不取数据，是这张表上最便宜的读。
+          # RLS 挡住未登录请求是正常的：连到数据库、被策略判定一次，
+          # 这个「活动」本身就足以把暂停计时推后。
+          code=$(curl -sS -o /tmp/out.txt -w '%{http_code}' \
+            -X HEAD \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "Prefer: count=exact" \
+            "$SUPABASE_URL/rest/v1/mastery?select=word_key&limit=1")
+
+          echo "HTTP $code"
+          # 200/206 = 正常；401/403 = RLS 按预期拒绝（也算连上了）；
+          # 404 = 表还没建；5xx / 000 = 真出问题了
+          case "$code" in
+            200|206|401|403) echo "保活成功" ;;
+            *) echo "保活异常，请检查项目是否被暂停"; head -c 500 /tmp/out.txt; exit 1 ;;
+          esac

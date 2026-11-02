@@ -3,7 +3,8 @@
 线上地址：<https://xiaozheqiu.github.io/learn-english-vocab/>
 
 移动优先的 Oxford 3000 / 5000 词表（PWA）：5323 条 A1–C1 词条，按等级 / 档位 / 牛津官方
-词表 / 词性 / 首字母筛选与搜索，逐条标记「已掌握」，全部在本机浏览器完成，无服务端。
+词表 / 词性 / 首字母筛选与搜索，逐条标记「已掌握」，默认全部在本机浏览器完成；
+可选的[跨设备同步](#跨设备同步可选)登录后才用云端，不配就是纯本地应用。
 
 布局是三段式：顶栏与筛选 / 板块进度 / 表头固定在顶部，分页固定在底部，只有中间的词表在滚动。
 
@@ -151,14 +152,73 @@ IndexedDB 库 `ox5000` **v2**，两个 store：
 `parseExport` / `clearProgress`、store 上的 `exportData` / `importData` / `wipeProgress`
 一起删掉了 —— 单人本机词表没有换设备搬进度的场景，留着只是一排永远不点的按钮。
 
-代价要说清楚：**现在没有任何把「已掌握」取出浏览器的口子**。进度只活在
-IndexedDB `ox5000.mastery` 里，清浏览器数据即归零。哪天需要备份，从 git 历史里
+代价要说清楚：**界面里没有导出 / 导入 / 清空这三个按钮**。进度活在
+IndexedDB `ox5000.mastery` 里，清浏览器数据即归零。备份的正规路径是
+[跨设备同步](#跨设备同步可选)（登录后云端有一份）；若要手工搬，从 git 历史里
 `git show 542bd98:src/components/Panel/sections/DataSection.tsx` 能捞回整段实现，
 `db.ts` 的四个函数同样是纯数据操作、不依赖 UI。
 
 `normalizePrefs` 仍然保留：老库里存着 `sessionSize`、`reviewSize`、`quizSize`、
 `retention`、`quizTypes`、`includeExtended`、`cefrCap`、`autoLockMinutes` 这些死字段，
 读快照时要归一后写回干净版本。
+
+### 跨设备同步（可选）
+
+手机标记、电脑接着学，靠 Supabase 把「已掌握」对齐。**不配就能不用**：
+三个环境变量缺任一时代整块功能不出现，应用与接入之前完全一样（本地开发、e2e、
+首次 clone 都是这个状态）。
+
+接入三步：
+
+1. Supabase 建项目 → SQL Editor 跑 `supabase/schema.sql`
+2. 仓库 Secrets 加 `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_EMAIL`；
+   本地写进 `.env.local`（`deploy.yml` 把它们注入构建，见下面第 4 条）
+3. 建唯一的那个账号，然后跑 `./scripts/db.sh -f supabase/set-password.sql`
+   把密码落成约定值 —— 不走控制台「重置密码」那套发信流程
+
+本地开发：
+
+```bash
+printf 'VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\nVITE_CLOUD_EMAIL=%s\n' \
+  'https://xxxx.supabase.co' 'eyJhbGci...' 'you@example.com' > .env.local
+npm run dev
+```
+
+**只有一个账号，所以登录界面只有一个密码框。** 邮箱是构建期注入的常量
+（`VITE_CLOUD_EMAIL`），用户在界面上永远看不到它 —— 多用户的注册体系
+（邮箱校验、找回密码、账号不存在的区分）服务的是一个不存在的问题。
+
+**注意线上构建必须带这三个变量。** `deploy.yml` 从仓库 Secrets 读并注入，
+漏了也不报错：构建会安静地产出一个「纯本地版」，手机端界面看着一切正常，
+却连登录入口都没有。这是这块最容易踩的坑。
+
+三条设计约束，改这块之前先读完：
+
+**IndexedDB 是唯一事实来源，云端只是备份。** 所以每个网络调用都由上层 `void`
+触发：失败只置状态、不回滚内存、不阻塞渲染。方向反过来（云端失败就回滚本地）
+等于让一次断网吃掉用户刚标的词。这条和「隐私模式降级内存态」是同一个取向。
+
+**`pull()` 未登录必须返回 `null`，不能返回空 Map。** RLS 对匿名请求的回应是
+空结果集而不是错误（HTTP 200 + `[]`）。把它当成「云端为空」会让合并判定为
+「无变化 → 已对齐」，于是登录框永不出现、本机进度永远传不上去。区分这两件事
+的责任在 `cloudClient.pull()`：先查会话再查表；`cloud.test.ts` 钉住了这个语义差。
+
+**取消掌握必须落成墓碑行。** 本地只有「已掌握」的键，取消 = 删行。若云端也只存
+存在的行，删除就无处可同步：另一台设备拉不到这行，会保留自己本地的标记，
+下次 push 又把它复活。所以表里是 `mastered boolean`，取消写 `false`
+而不是 `DELETE`。
+
+**时间戳由服务端定。** `updated_at` 由 Postgres 触发器写 `now()`，前端 upsert
+时不传。手机和电脑时钟差几分钟是常态，用各自 `Date.now()` 当裁判会出现
+「刚标的被旧数据覆盖」。
+
+`cloud.ts`（轻，含合并规则与 `enabled` 判定）与 `cloudClient.ts`（重，含
+supabase-js）是刻意分开的：后者由前者动态 import。supabase-js 约 55KB gzip，
+静态引入会让每个没登录的人替它付下载与解析成本 —— 和被移出首屏的 Markdown
+解析器（40KB）是同一笔账。合并规则是纯函数，`cloud.test.ts` 逐条钉住。
+
+免费项目 **7 天无活动会被暂停**，要手动 resume。`.github/workflows/supabase-keepalive.yml`
+每 3 天打一次最便宜的查询保活；没配 secret 时静默跳过，fork 不会因此变红。
 
 ## 为什么没有设置面板
 
@@ -169,7 +229,7 @@ IndexedDB `ox5000.mastery` 里，清浏览器数据即归零。哪天需要备�
 | ---- | -------------------------------- | ---------------------------------------------------------- |
 | 数据 | 导出 / 导入 JSON、清空进度、安装 | 单人本机词表，不换设备搬进度；清空进度也没人为了重来而清空 |
 | 设置 | 每页条数、默认等级               | 每页条数在筛选抽屉里已有一份，等于同一个开关做两遍         |
-| 关于 | 词性对照入口、版本号             | 留着，且把「检查更新」「安装到桌面」挪进来                 |
+| 关于 | 词性对照入口、版本号、跨设备同步 | 留着，且把「检查更新」「安装到桌面」挪进来                 |
 
 **每页条数的处理**：抽屉里本来就有一排 `20 / 50 / 100 / 200`，那才是用户改它的地方
 （翻页时手就在旁边）。设置页的 select 是同一个值的第二个入口，删掉不损失能力。

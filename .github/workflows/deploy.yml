@@ -39,7 +39,19 @@ jobs:
         run: npm ci
 
       # 构建内含 tsc --noEmit：类型错误会让部署失败，这是唯一保留的质量闸门
+      #
+      # 云同步的三个变量从仓库 Variables / Secrets 注入。
+      # 没有它们，线上构建会编译出一个「纯本地版」：VITE_SUPABASE_* 为空，
+      # cloudEnabled 为 false，界面上连登录入口都不会出现 —— 手机端看着一切正常，
+      # 却永远同步不了。三个都走 secrets：`vars.X || secrets.X` 的写法看着兼容，
+      # 实际会在 vars 里留一个空值把 secrets 顶掉，多一个可失效的层次不值当。
+      # URL 与 publishable key 本来就是公开的（会进构建产物），放 secret 只是
+      # 为了和账号邮箱统一管理，不增加任何泄露风险。
       - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_CLOUD_EMAIL: ${{ secrets.SUPABASE_EMAIL }}
         run: npm run build
 
       - uses: actions/configure-pages@v6
