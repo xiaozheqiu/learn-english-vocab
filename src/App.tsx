@@ -7,6 +7,7 @@ import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { useIsDesktop } from "@/hooks/useMediaQuery";
 import { usePwaUpdate } from "@/hooks/usePwaUpdate";
 import { useVocabStore } from "@/hooks/useVocabStore";
+import { loadCloudClient } from "@/lib/cloud";
 import { navigate, parseRoute, routeHref, type Route } from "@/lib/route";
 
 /**
@@ -140,6 +141,31 @@ function AppShell() {
     setAboutOpen(true);
   }, []);
 
+  /**
+   * 登录 / 退出。
+   *
+   * 只收密码：账号是构建期注入的唯一邮箱（见 cloudClient 的 cloudEmail）。
+   * 登录要等 supabase-js 懒加载 + 一次网络往返，所以照样走云端的 lazy chunk。
+   * 登录成功后触发一次同步，把本机已有的历史进度一次性搬上云 —— 这就是
+   * 「手机上已经学过的那批词」进数据库的路径，不需要额外的迁移脚本。
+   */
+  const handleLogin = useCallback(
+    async (password: string): Promise<string | null> => {
+      const mod = await loadCloudClient();
+      const error = await mod.signInWithPassword(password);
+      if (error) return error;
+      await store.syncCloud();
+      return null;
+    },
+    [store],
+  );
+
+  const handleSignOut = useCallback(() => {
+    void loadCloudClient()
+      .then((mod) => mod.signOut())
+      .then(() => store.syncCloud());
+  }, [store]);
+
   const onAboutOpenChange = useCallback((open: boolean) => {
     setAboutOpen(open);
     if (!open) window.setTimeout(() => aboutTrigger.current?.focus(), 0);
@@ -237,6 +263,8 @@ function AppShell() {
         canInstall={Boolean(installPrompt)}
         onInstall={install}
         update={pwaUpdate}
+        onLogin={handleLogin}
+        onSignOut={handleSignOut}
       />
 
       {/* 深链兜底：导航后把 hash 对齐到实际渲染的页面 */}

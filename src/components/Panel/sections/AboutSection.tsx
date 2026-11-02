@@ -1,7 +1,9 @@
-import { BookOpen, Database, Info, Loader2, MonitorDown, RefreshCw } from "lucide-react";
+import { BookOpen, CloudOff, Cloud, Database, Info, Loader2, LogOut, MonitorDown, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { CheckResult, PwaUpdate } from "@/hooks/usePwaUpdate";
+import type { CloudState } from "@/lib/cloudState";
+import { CloudLogin } from "./CloudLogin";
 
 /**
  * 版本信息来自构建时注入（vite.config.js 的 define），不再手写。
@@ -47,6 +49,22 @@ export interface AboutSectionProps {
   onInstall?: () => void;
   /** 手动检查更新的入口；不传就隐藏 */
   update?: PwaUpdate;
+  /** 云端同步状态；disabled 时整块隐藏 */
+  cloud?: CloudState;
+  cloudError?: string;
+  onSync?: () => void;
+  /** 密码登录；返回错误文案，成功返回 null */
+  onLogin?: (password: string) => Promise<string | null>;
+  onSignOut?: () => void;
+}
+
+/** 云端状态的一句话说明；始终可用 aria-live 播报 */
+function cloudText(state: CloudState, error: string): string {
+  if (state === "signedOut") return "未登录，进度只存在这台设备上";
+  if (state === "syncing") return "正在同步…";
+  if (state === "synced") return "已与云端对齐";
+  if (state === "error") return error || "同步失败，本地进度未受影响";
+  return "";
 }
 
 /**
@@ -57,8 +75,19 @@ export interface AboutSectionProps {
  * 「安装到桌面」是浏览器允许时的一次性入口。这两个能力原本分别住在设置分区与
  * 数据分区，那两个分区连同导出 / 导入 / 清空一并移除，但能力本身留着。
  */
-export function AboutSection({ onOpenGuide, canInstall, onInstall, update }: AboutSectionProps) {
+export function AboutSection({
+  onOpenGuide,
+  canInstall,
+  onInstall,
+  update,
+  cloud,
+  cloudError = "",
+  onSync,
+  onLogin,
+  onSignOut,
+}: AboutSectionProps) {
   const hint = update ? resultText(update.checkResult, update.lastCheckedAt) : null;
+  const signedOut = cloud === "signedOut" || cloud === undefined;
 
   return (
     <div className="space-y-4">
@@ -87,9 +116,72 @@ export function AboutSection({ onOpenGuide, canInstall, onInstall, update }: Abo
           <li className="tnum">Oxford 5000 词表，共 5323 条，覆盖 A1–C1 五个等级</li>
           <li>词性与中文释义取自词表原数据，未做改写</li>
           <li>词表只显示单词与词性；释义不展示、也不参与搜索，点单词跳三方词典查</li>
-          <li>已掌握标记全部保存在本机浏览器，不上传、无服务端</li>
+          <li>已掌握标记先存在本机浏览器，登录后可同步到其他设备</li>
         </ul>
       </section>
+
+      {/* 云端同步：没配 Supabase（cloud === "disabled"）就整块不出现，
+          本地开发与首次 clone 的人看到的应用和接入之前完全一样 */}
+      {cloud && cloud !== "disabled" && (
+        <section aria-labelledby="about-cloud-title" className="border-t border-line pt-3">
+          <h3
+            id="about-cloud-title"
+            className="flex items-center gap-1.5 text-[13px] font-medium text-ink"
+          >
+            {cloud === "signedOut" ? (
+              <CloudOff className="h-3.5 w-3.5 text-ink-mute" aria-hidden="true" />
+            ) : (
+              <Cloud className="h-3.5 w-3.5 text-ink-mute" aria-hidden="true" />
+            )}
+            跨设备同步
+          </h3>
+          <p
+            className="mt-1 text-[12px] leading-5 text-ink-soft"
+            role="status"
+            aria-live="polite"
+            data-testid="cloud-status"
+            data-state={cloud}
+          >
+            {cloudText(cloud, cloudError)}
+          </p>
+
+          {signedOut ? (
+            <CloudLogin
+              onSubmit={onLogin ?? (async () => "未连接云端")}
+            />
+          ) : (
+            <div className="mt-1.5 flex gap-2">
+              <Button
+                variant="outline"
+                size="touch"
+                className="min-w-0 flex-1"
+                onClick={onSync}
+                disabled={cloud === "syncing"}
+                data-testid="cloud-sync"
+              >
+                {cloud === "syncing" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                )}
+                {cloud === "syncing" ? "正在同步…" : "立即同步"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="touch"
+                className="shrink-0"
+                onClick={onSignOut}
+                disabled={!onSignOut}
+                aria-label="退出登录"
+                title="退出登录"
+                data-testid="cloud-signout"
+              >
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        </section>
+      )}
 
       <section aria-labelledby="about-version-title" className="border-t border-line pt-3">
         <h3

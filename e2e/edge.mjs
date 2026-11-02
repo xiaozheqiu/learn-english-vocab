@@ -217,6 +217,30 @@ try {
     (await page.locator("#pref-page-size").count()) === 0 &&
       (await page.locator("#pref-default-level").count()) === 0,
   );
+  /**
+   * 云同步这块的硬约束：**界面上永远不出现邮箱输入框**。
+   *
+   * 全站只有一个账号，邮箱来自构建期注入的 VITE_CLOUD_EMAIL。一旦哪天有人
+   * 把登录改回「邮箱 + 密码」，或者把缺配置的登录框也渲染出来，这里会红。
+   *
+   * 不写成「没有同步入口」：开发者本地有 .env.local 时入口本来就该出现，
+   * 写死成不出现会让每次本地跑 e2e 都假红。真正该守住的是「入口出现时
+   * 它长什么样」，这与是否配置了云端无关 —— 所以配了才往下查。
+   */
+  const cloudConfigured = (await page.locator('[data-testid="cloud-status"]').count()) > 0;
+  const hasEmailField = (await page.locator('input[type="email"]').count()) > 0;
+  const cloudState = cloudConfigured
+    ? await page.locator('[data-testid="cloud-status"]').getAttribute("data-state")
+    : "unconfigured";
+  report.check(
+    "panel.cloudLoginIsPasswordOnly",
+    !hasEmailField &&
+      // 配了云端且未登录时，必须有一个密码框；其余状态不该有
+      (cloudState === "signedOut"
+        ? (await page.locator('[data-testid="cloud-password"]').count()) === 1
+        : true),
+    `state=${cloudState} email=${hasEmailField}`,
+  );
   await page.keyboard.press("Escape");
   await waitDialogClosed(page);
 

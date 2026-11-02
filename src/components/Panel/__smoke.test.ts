@@ -79,6 +79,78 @@ describe("关于分区（§2.3）", () => {
     expect(BUILD_SHA.length).toBeGreaterThan(0);
     expect(BUILD_FINGERPRINT.length).toBeGreaterThan(0);
   });
+
+  /**
+   * 云端同步默认不出现 —— 没配 Supabase 的人（本地开发、e2e、首次 clone）
+   * 拿到的应用必须和接入之前一模一样。
+   */
+  it("不传 cloud 时同步整块不渲染", () => {
+    const html = render(createElement(AboutSection, { onOpenGuide: () => {} }));
+    expect(html).not.toContain('data-testid="cloud-status"');
+    expect(html).not.toContain('data-testid="cloud-login-form"');
+    expect(html).not.toContain('data-testid="cloud-sync"');
+    expect(html).not.toContain("跨设备同步");
+  });
+
+  it("disabled 等同于未接入，同样不渲染", () => {
+    const html = render(
+      createElement(AboutSection, { onOpenGuide: () => {}, cloud: "disabled" as const }),
+    );
+    expect(html).not.toContain('data-testid="cloud-status"');
+  });
+
+  it("未登录时给登录入口，且说明进度只在本机", () => {
+    const html = render(
+      createElement(AboutSection, {
+        onOpenGuide: () => {},
+        cloud: "signedOut" as const,
+        onLogin: async () => null,
+      }),
+    );
+    expect(html).toContain('data-testid="cloud-login-form"');
+    expect(html).toContain('data-state="signedOut"');
+    expect(html).toContain("进度只存在这台设备上");
+    // 未登录不该出现「立即同步」
+    expect(html).not.toContain('data-testid="cloud-sync"');
+  });
+
+  it("已同步时显示对齐结论与同步/退出两个入口", () => {
+    const html = render(
+      createElement(AboutSection, {
+        onOpenGuide: () => {},
+        cloud: "synced" as const,
+        onSync: () => {},
+        onSignOut: () => {},
+      }),
+    );
+    expect(html).toContain('data-state="synced"');
+    expect(html).toContain("已与云端对齐");
+    expect(html).toContain('data-testid="cloud-sync"');
+    expect(html).toContain('data-testid="cloud-signout"');
+  });
+
+  it("失败时给出原因，并强调本地进度没受影响", () => {
+    const html = render(
+      createElement(AboutSection, {
+        onOpenGuide: () => {},
+        cloud: "error" as const,
+        cloudError: "云端读取失败，稍后重试",
+      }),
+    );
+    expect(html).toContain('data-state="error"');
+    expect(html).toContain("云端读取失败");
+  });
+
+  it("没传 cloudError 时失败态有兜底文案，不渲染空行", () => {
+    const html = render(
+      createElement(AboutSection, {
+        onOpenGuide: () => {},
+        cloud: "error" as const,
+        onSync: () => {},
+      }),
+    );
+    expect(html).toContain("同步失败，本地进度未受影响");
+  });
 });
 
 describe("构建时间格式化", () => {

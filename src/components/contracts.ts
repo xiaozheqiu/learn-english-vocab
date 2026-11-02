@@ -15,6 +15,9 @@ export interface FloatingPanelProps {
   onOpenGuide: () => void;
   /** 设置页的版本检查入口 */
   update: PwaUpdate;
+  /** 密码登录；返回错误文案，成功返回 null。未配置 Supabase 时组件不渲染这块 */
+  onLogin: (password: string) => Promise<string | null>;
+  onSignOut: () => void;
 }
 
 export type { VocabStore };

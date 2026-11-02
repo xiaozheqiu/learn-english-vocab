@@ -40,6 +40,8 @@ export function FloatingPanel({
   onInstall,
   onOpenGuide,
   update,
+  onLogin,
+  onSignOut,
 }: FloatingPanelProps) {
   const isDesktop = useIsDesktop();
   const [minimized, setMinimized] = useState(false);
@@ -141,6 +143,11 @@ export function FloatingPanel({
               canInstall={canInstall}
               onInstall={onInstall}
               update={update}
+              cloud={store.cloud}
+              cloudError={store.cloudError}
+              onSync={() => void store.syncCloud()}
+              onLogin={onLogin}
+              onSignOut={onSignOut}
             />
           </div>
         </div>

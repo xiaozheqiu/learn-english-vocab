@@ -4,7 +4,7 @@
  * 单一事实来源：词表页的 mastered / prefs 都从这里读。
  * 写入先落内存（乐观更新），再落 IndexedDB；失败只记录不阻塞 UI。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   isMemoryMode,
   loadSnapshot,
@@ -15,6 +15,13 @@ import {
 } from "@/lib/db";
 import { cachedAll, enrichAll, indexesReady, isLoaded, loadAll, loadLevel } from "@/lib/words";
 import { LIST_VIEW_KEY } from "@/lib/listView";
+import {
+  cloudEnabled,
+  loadCloudClient,
+  mergeMastery,
+  sameMastery,
+  type CloudState,
+} from "@/lib/cloud";
 import {
   DEFAULT_PREFS,
   LEGACY_MASTERED_KEY,
@@ -68,11 +75,17 @@ export interface VocabStore {
   loadingWords: boolean;
   /** rank / tier / 牛津标记补齐了没；档位与牛津筛选只在这之后才可信 */
   indexesReady: boolean;
+  /** 云端同步状态；未配置环境变量时恒为 disabled */
+  cloud: CloudState;
 
   ensureLevels: (target: LevelFilter) => Promise<void>;
   ensureIndexes: () => Promise<void>;
   toggleMastery: (keys: readonly string[], mastered: boolean) => Promise<void>;
   setPrefs: (patch: Partial<Prefs>) => Promise<void>;
+  /** 手动再对齐一次（关于页的按钮）；登录态变化后也用它 */
+  syncCloud: () => Promise<void>;
+  /** 云端同步失败的原因，成功或未启用时为空串 */
+  cloudError: string;
 }
 
 export function useVocabStore(): VocabStore {
@@ -84,6 +97,108 @@ export function useVocabStore(): VocabStore {
   const [loadError, setLoadError] = useState("");
   const [loadingWords, setLoadingWords] = useState(true);
   const [indexesReadyState, setIndexesReadyState] = useState(indexesReady);
+  const [cloud, setCloud] = useState<CloudState>(cloudEnabled ? "signedOut" : "disabled");
+  const [cloudError, setCloudError] = useState("");
+
+  /**
+   * 云端对齐：拉全量 → 与本地合并 → 把本地更新的一侧回写。
+   *
+   * 用 ref 存主体函数而不是 useCallback：初始化 effect 里要用它，而那个 effect
+   * 的依赖列表是空的（只跑一次）。把函数塞 ref 里，effect 就能拿到最新闭包，
+   * 又不必把任何状态塞进依赖导致重跑。
+   *
+   * `aliveRef` 让组件卸载后回来的响应不再 setState。
+   */
+  const aliveRef = useRef(true);
+  const syncRef = useRef<() => Promise<void>>(async () => undefined);
+
+  syncRef.current = async () => {
+    if (!cloudEnabled) return;
+    setCloud((state) => (state === "disabled" ? state : "syncing"));
+    setCloudError("");
+
+    /**
+     * 整个流程包 try/catch，且必须在 finally 之外收口。
+     *
+     * 没有这层的话，任何一步抛错（模块加载失败、DNS 挂了、IDB 正在被别的标签页
+     * 占用……）都会让状态永久停在「正在同步…」—— 界面永远转圈，用户既看不到
+     * 成功也看不到失败。弱网和离线是该功能的常态，不是例外。
+     */
+    try {
+      // 到这里才把 supabase-js 拉下来。没登录的人第一次同步会多一次模块加载，
+      // 之后走缓存；比起让每个首屏都背这个包，这点延迟是划算的。
+      const cloud = await loadCloudClient();
+      if (!aliveRef.current) return;
+
+      const remote = await cloud.pull();
+      if (!aliveRef.current) return;
+      if (remote === null) {
+        /**
+         * pull 返回 null 只有两种含义：没登录，或者已登录但读失败。
+         *
+         * **绝不能把 null 当成「云端为空」。** RLS 对匿名请求的回应是空结果集
+         * 而不是报错，早期版本据此判成「云端没有数据 → 合并无变化 → 已对齐」，
+         * 于是一个从没登录过的设备会显示「已与云端对齐」，登录入口不出现，
+         * 本机进度也就永远传不上去。区分这两者的责任在 cloudClient.pull()，
+         * 它先查会话再查表；这里只负责把结果翻译成界面状态。
+         */
+        const signedIn = await cloud.isSignedIn().catch(() => false);
+        if (!aliveRef.current) return;
+        if (!signedIn) {
+          setCloud("signedOut");
+          return;
+        }
+        setCloud("error");
+        setCloudError("云端读取失败，稍后重试");
+        return;
+      }
+
+      // 合并要看最新的本地快照；闭包里的 mastered 可能是旧的
+      const local = await loadSnapshot();
+      const { merged, upload } = mergeMastery(local.mastery, remote);
+
+      if (!sameMastery(merged, local.mastery)) {
+        // 云端更新的部分落地：内存与 IndexedDB 一起改，否则刷新就丢
+        const added = [...merged].filter(([key]) => !local.mastery.has(key));
+        const removed = [...local.mastery.keys()].filter((key) => !merged.has(key));
+        if (added.length) await saveMastery(added.map(([key]) => key), true);
+        if (removed.length) await saveMastery(removed, false);
+        if (!aliveRef.current) return;
+        setMastered(merged);
+      }
+
+      // 本地更新、或云端还没有的，回写。失败不影响已经落地的合并结果。
+      if (upload.length) {
+        const stamps = await cloud.push(upload, true);
+        if (stamps && aliveRef.current) {
+          setMastered((current) => {
+            const next = new Map(current);
+            for (const [key, at] of stamps) if (next.has(key)) next.set(key, at);
+            return next;
+          });
+        }
+      }
+
+      if (aliveRef.current) setCloud("synced");
+    } catch {
+      // 云端出问题的任何形态都收敛到 error，绝不留在 syncing
+      if (!aliveRef.current) return;
+      setCloud("error");
+      setCloudError("同步失败，本地进度未受影响");
+    }
+  };
+
+  const runCloudSync = useCallback(async () => {
+    await syncRef.current();
+  }, []);
+
+  // 卸载后回来的网络响应不再 setState
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   /* ── 初始化 ──────────────────────────────────────────────── */
   useEffect(() => {
@@ -135,6 +250,11 @@ export function useVocabStore(): VocabStore {
         // 收尾两件：内存态告警要亮；迁移失败只是这次没导入旧进度，不挡首屏。
         if (!(await storageProbe)) setMemoryMode(true);
         await importLegacy();
+
+        // 云端对齐放在最后、且不 await：首屏已经该渲染的都渲染了。
+        // 走 ref 而不是 runCloudSync：这个 effect 只该跑一次，把回调塞进依赖
+        // 列表会让「初始化」变成可重跑的，那不是这里要的语义。
+        if (alive) void syncRef.current();
       } catch (error) {
         if (alive) setLoadError(String(error));
       } finally {
@@ -273,6 +393,34 @@ export function useVocabStore(): VocabStore {
     } catch (error) {
       setLoadError(String(error));
     }
+
+    /**
+     * 云端推送排在本地写入之后，且不 await。
+     *
+     * 顺序不能反：saveMastery 是数据安全的底线，云端只是备份。
+     * 用 void 而不是 await，是因为手机弱网下一次 upsert 可能几百毫秒，
+     * 而用户点下一个词不该等它 —— 本地已经落了，刷新也不丢。
+     *
+     * 未登录 / 未配置时 push 自己会立刻返回，这里不需要额外判断。
+     */
+    if (cloudEnabled) {
+      void loadCloudClient()
+        .then((mod) => mod.push(keys, value))
+        .then((stamps) => {
+          if (!stamps || !aliveRef.current) return;
+          setCloud("synced");
+          // 用服务端时间替换本地时间戳，避免下次合并时两边反复打架
+          setMastered((current) => {
+            const next = new Map(current);
+            for (const [key, at] of stamps) if (next.has(key)) next.set(key, at);
+            return next;
+          });
+        })
+        .catch(() => {
+          // 云端失败只影响多设备同步，本地进度已经安全落盘，不打扰用户
+          if (aliveRef.current) setCloud("error");
+        });
+    }
   }, []);
 
   const setPrefs = useCallback(async (patch: Partial<Prefs>) => {
@@ -302,6 +450,9 @@ export function useVocabStore(): VocabStore {
       ensureIndexes,
       toggleMastery,
       setPrefs,
+      cloud,
+      cloudError,
+      syncCloud: runCloudSync,
     }),
     [
       ready,
@@ -316,6 +467,9 @@ export function useVocabStore(): VocabStore {
       ensureIndexes,
       toggleMastery,
       setPrefs,
+      cloud,
+      cloudError,
+      runCloudSync,
     ],
   );
 }
