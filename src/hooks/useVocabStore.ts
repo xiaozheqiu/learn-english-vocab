@@ -232,36 +232,6 @@ export function useVocabStore(): VocabStore {
   }, []);
 
   /**
-   * 把队列里积压的 key 补推上去。
-   *
-   * 每条 key 的「已掌握」状态现读 IndexedDB —— 队列只记「这个 key 需要推」，
-   * 不记值，所以同一个词被反复开合也只有一次推送，不会出现顺序错乱。
-   *
-   * `keepalive: true` 让浏览器在页面卸载过程中也把请求发完（fetch 的标准选项，
-   * supabase-js 不暴露它，所以这里为了保命走原生 fetch —— 见 flushPendingNow）。
-   */
-  const flushPending = useCallback(async () => {
-    if (!cloudEnabled) return;
-    const pending = readPending();
-    if (pending.size === 0) return;
-    try {
-      const mod = await loadCloudClient();
-      const local = await loadSnapshot();
-      const toTrue = [...pending].filter((key) => local.mastery.has(key));
-      const toFalse = [...pending].filter((key) => !local.mastery.has(key));
-      let ok = true;
-      if (toTrue.length) ok = (await mod.push(toTrue, true)) !== null && ok;
-      if (toFalse.length) ok = (await mod.push(toFalse, false)) !== null && ok;
-      if (ok) {
-        clearPending(pending);
-        if (aliveRef.current) setCloud("synced");
-      }
-    } catch {
-      // 补推失败不入 error：正常的那次推送可能已经成功，别用一个兜底路径惊动用户
-    }
-  }, []);
-
-  /**
    * 页面进入后台 / 被关掉时，用原生 fetch + keepalive 把积压补出去。
    *
    * 为什么不用 supabase-js：它的 fetch 包装没有暴露 `keepalive`，而普通请求
@@ -308,20 +278,24 @@ export function useVocabStore(): VocabStore {
   }, []);
 
   /**
-   * 三个触发点：启动时补一次积压、页面隐藏时抢救、回到前台时对齐。
+   * 三个触发点：启动时补一次积压、页面隐藏时抢救、回到前台时完整对齐。
    *
-   * 回到前台也叫一次同步，是因为另一台设备可能刚改过 —— 用户切回来那一刻
-   * 本来就该看到最新的。
+   * `hidden` 走 flushPendingNow（原生 fetch + keepalive，只推不拉 —— 页面正在
+   * 消失，来不及等一次往返）。
+   *
+   * 回到前台必须走**完整同步**而不是 flushPending：后者只把本地积压推上去，
+   * 不拉云端，于是「在另一个标签页/设备标记完，切回这个页面」看不到对方改动。
+   * 这个 bug 真实存在过 —— 注释写着「切回来就该看到最新的」，代码却只推不拉。
    */
   useEffect(() => {
     if (!cloudEnabled) return;
     const onVisibility = () => {
       if (document.visibilityState === "hidden") flushPendingNow();
-      else void flushPending();
+      else void syncRef.current();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [flushPending, flushPendingNow]);
+  }, [flushPendingNow]);
 
   // 卸载后回来的网络响应不再 setState
   useEffect(() => {
