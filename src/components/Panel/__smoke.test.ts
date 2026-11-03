@@ -114,19 +114,36 @@ describe("关于分区（§2.3）", () => {
     expect(html).not.toContain('data-testid="cloud-sync"');
   });
 
-  it("已同步时显示对齐结论与同步/退出两个入口", () => {
+  /**
+   * 登录后不该有「同步」按钮。
+   *
+   * 同步是自动的（点词即推、打开/切回即拉），一个需要人手动催的同步按钮
+   * 等于把设计缺陷摆在界面上。这条断言就是防止它被好心加回来。
+   */
+  it("已登录时只留退出登录，不再有手动同步按钮", () => {
     const html = render(
       createElement(AboutSection, {
         onOpenGuide: () => {},
         cloud: "synced" as const,
-        onSync: () => {},
         onSignOut: () => {},
       }),
     );
     expect(html).toContain('data-state="synced"');
     expect(html).toContain("已与云端对齐");
-    expect(html).toContain('data-testid="cloud-sync"');
+    expect(html).not.toContain('data-testid="cloud-sync"');
     expect(html).toContain('data-testid="cloud-signout"');
+  });
+
+  it("同步中也不出现手动同步按钮", () => {
+    const html = render(
+      createElement(AboutSection, {
+        onOpenGuide: () => {},
+        cloud: "syncing" as const,
+        onSignOut: () => {},
+      }),
+    );
+    expect(html).toContain('data-state="syncing"');
+    expect(html).not.toContain('data-testid="cloud-sync"');
   });
 
   it("失败时给出原因，并强调本地进度没受影响", () => {
@@ -146,7 +163,6 @@ describe("关于分区（§2.3）", () => {
       createElement(AboutSection, {
         onOpenGuide: () => {},
         cloud: "error" as const,
-        onSync: () => {},
       }),
     );
     expect(html).toContain("同步失败，本地进度未受影响");

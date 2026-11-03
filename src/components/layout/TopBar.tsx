@@ -7,6 +7,16 @@ export interface TopBarProps {
   onOpenAbout: () => void;
   onOpenGuide?: () => void;
   memoryMode?: boolean;
+  /**
+   * 云端正在同步。
+   *
+   * 没有这条提示时，「登录后等十几秒」看起来就是「点了没反应」—— 用户会去
+   * 刷新页面，而刷新恰好重走一遍流程、此时数据已到位，于是误以为「只有刷新
+   * 才生效」。慢网络下这是必然撞见的场景，所以要把「在干活」显示出来。
+   */
+  syncing?: boolean;
+  /** 同步失败的简短原因；只有出错时才占一行 */
+  syncError?: string;
 }
 
 /**
@@ -16,7 +26,15 @@ export interface TopBarProps {
  * 图标是信息「i」而不是齿轮：面板里只剩一张关于页，没有可配置项了。
  * 齿轮会让人点开找设置，然后发现无处可设。
  */
-export function TopBar({ title, onSearch, onOpenAbout, onOpenGuide, memoryMode }: TopBarProps) {
+export function TopBar({
+  title,
+  onSearch,
+  onOpenAbout,
+  onOpenGuide,
+  memoryMode,
+  syncing,
+  syncError,
+}: TopBarProps) {
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-paper/95 backdrop-blur">
       <div className="flex h-12 items-center gap-1 px-2">
@@ -68,6 +86,27 @@ export function TopBar({ title, onSearch, onOpenAbout, onOpenGuide, memoryMode }
           role="status"
         >
           浏览器禁止本地存储，本次进度不会保存
+        </p>
+      )}
+
+      {/* 同步中 / 同步失败都贴在顶栏：用户不用打开面板就知道数据在不在路上 */}
+      {syncing && (
+        <p
+          className="border-t border-line px-3 py-1.5 text-[12px] text-ink-mute"
+          role="status"
+          aria-live="polite"
+          data-testid="top-syncing"
+        >
+          正在与云端同步…
+        </p>
+      )}
+      {!syncing && syncError && (
+        <p
+          className="border-t border-due/25 bg-due-wash px-3 py-1.5 text-[12px] text-due"
+          role="status"
+          data-testid="top-sync-error"
+        >
+          {syncError}
         </p>
       )}
     </header>

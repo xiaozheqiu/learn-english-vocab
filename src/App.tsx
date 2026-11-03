@@ -149,26 +149,46 @@ function AppShell() {
    * 登录成功后触发一次同步，把本机已有的历史进度一次性搬上云 —— 这就是
    * 「手机上已经学过的那批词」进数据库的路径，不需要额外的迁移脚本。
    */
+  /**
+   * 登录。
+   *
+   * 登录期间界面要能看出「在干活」：状态先置 syncing，再走 认证 → 同步。
+   * 早先这里是 `await loadCloudClient()` 开头，模块没下载完之前没有任何反馈，
+   * 慢网络上看起来就是「点了没反应」；现在模块在打开关于面板时就已经预取（见下），
+   * 这里通常直接命中缓存。
+   */
   const handleLogin = useCallback(
     async (password: string): Promise<string | null> => {
       const mod = await loadCloudClient();
       const error = await mod.signInWithPassword(password);
       if (error) return error;
+      // 登录成功立刻触发双向同步（拉云端 + 回写本地差异）
       await store.syncCloud();
       return null;
     },
     [store],
   );
 
+  /**
+   * 退出登录。
+   *
+   * 退出后不调用 syncCloud：那会把「已登出」当成一次同步失败去试，
+   * 而 syncCloud 在没有 session 时会自己回到 signedOut，不必多打一次网络。
+   */
   const handleSignOut = useCallback(() => {
-    void loadCloudClient()
-      .then((mod) => mod.signOut())
-      .then(() => store.syncCloud());
-  }, [store]);
+    void loadCloudClient().then((mod) => mod.signOut());
+  }, []);
 
+  /**
+   * 面板一打开就预取云端模块（210KB 的 supabase-js）。
+   *
+   * 用户点开「关于」的下一步十有八九是输密码登录，趁他们读那几行说明的工夫
+   * 把模块下载完，登录时就不用再等一次串行下载。
+   */
   const onAboutOpenChange = useCallback((open: boolean) => {
     setAboutOpen(open);
-    if (!open) window.setTimeout(() => aboutTrigger.current?.focus(), 0);
+    if (open) void loadCloudClient();
+    else window.setTimeout(() => aboutTrigger.current?.focus(), 0);
   }, []);
 
   /* ── 早期返回：正在读本机进度 ──────────────────────────────── */
@@ -199,6 +219,8 @@ function AppShell() {
             onOpenAbout={openAbout}
             onOpenGuide={() => navigate("guide")}
             memoryMode={store.memoryMode}
+            syncing={store.cloud === "syncing"}
+            syncError={store.cloud === "error" ? store.cloudError : ""}
           />
           <div
             className="flex items-center gap-1 border-b border-line py-1.5"
@@ -233,6 +255,8 @@ function AppShell() {
           title={ROUTE_TITLES[activeRoute]}
           onOpenAbout={openAbout}
           memoryMode={store.memoryMode}
+          syncing={store.cloud === "syncing"}
+          syncError={store.cloud === "error" ? store.cloudError : ""}
         />
       )}
 

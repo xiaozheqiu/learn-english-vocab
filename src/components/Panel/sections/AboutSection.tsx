@@ -52,7 +52,6 @@ export interface AboutSectionProps {
   /** 云端同步状态；disabled 时整块隐藏 */
   cloud?: CloudState;
   cloudError?: string;
-  onSync?: () => void;
   /** 密码登录；返回错误文案，成功返回 null */
   onLogin?: (password: string) => Promise<string | null>;
   onSignOut?: () => void;
@@ -82,7 +81,6 @@ export function AboutSection({
   update,
   cloud,
   cloudError = "",
-  onSync,
   onLogin,
   onSignOut,
 }: AboutSectionProps) {
@@ -146,30 +144,14 @@ export function AboutSection({
           </p>
 
           {signedOut ? (
-            <CloudLogin
-              onSubmit={onLogin ?? (async () => "未连接云端")}
-            />
+            <CloudLogin onSubmit={onLogin ?? (async () => "未连接云端")} />
           ) : (
-            <div className="mt-1.5 flex gap-2">
-              <Button
-                variant="outline"
-                size="touch"
-                className="min-w-0 flex-1"
-                onClick={onSync}
-                disabled={cloud === "syncing"}
-                data-testid="cloud-sync"
-              >
-                {cloud === "syncing" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                )}
-                {cloud === "syncing" ? "正在同步…" : "立即同步"}
-              </Button>
+            /* 登录后没有「同步」按钮：同步是自动的，一个需要人催的同步等于
+               把「设计缺陷」摆在界面上。留着的位置只放退出登录。 */
+            <div className="mt-1.5 flex justify-end">
               <Button
                 variant="ghost"
                 size="touch"
-                className="shrink-0"
                 onClick={onSignOut}
                 disabled={!onSignOut}
                 aria-label="退出登录"
@@ -177,6 +159,7 @@ export function AboutSection({
                 data-testid="cloud-signout"
               >
                 <LogOut className="h-4 w-4" aria-hidden="true" />
+                退出登录
               </Button>
             </div>
           )}

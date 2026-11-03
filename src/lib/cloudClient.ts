@@ -111,15 +111,41 @@ export async function signOut(): Promise<void> {
  * 所以先确认会话，再发查询：没登录 = null（上层据此显示登录框），
  * 已登录但查询失败 = null（上层显示同步失败）。两者都不该被当成「空」。
  */
+/**
+ * 单次同步的等待上限。
+ *
+ * 没有它的话，网络半通不通时浏览器会自己撑到几十秒才放弃，期间界面一直显示
+ * 「正在同步…」。超过这个时间就当作失败、明确告诉用户可以稍后再来 —— 本地
+ * 数据不受影响，队列也会留着下次补推。
+ */
+const TIMEOUT_MS = 12_000;
+
+/** 给任意请求套一个超时；超时后返回 null，语义与「失败」一致 */
+function withTimeout<T>(task: PromiseLike<T>, ms = TIMEOUT_MS): Promise<T | null> {
+  return Promise.race([
+    Promise.resolve(task),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 export async function pull(): Promise<Map<string, RemoteRow> | null> {
   const db = supabase();
   if (!db) return null;
   if (!(await isSignedIn())) return null;
 
-  const { data, error } = await db.from("mastery").select("word_key, mastered, updated_at");
-  if (error || !data) return null;
+  /**
+   * 查询构造器是 thenable 而不是真 Promise，`Promise.race` 直接吃它会拿不到
+   * `.then` 之外的东西；先 await 成普通对象再套超时。
+   */
+  const query = db.from("mastery").select("word_key, mastered, updated_at");
+  const result = await withTimeout<{
+    data: { word_key: string; mastered: boolean; updated_at: string }[] | null;
+    error: unknown;
+  }>(query.then((r) => ({ data: r.data as never, error: r.error })));
+  if (!result || result.error || !result.data) return null;
+
   const rows = new Map<string, RemoteRow>();
-  for (const row of data as { word_key: string; mastered: boolean; updated_at: string }[]) {
+  for (const row of result.data) {
     rows.set(row.word_key, {
       mastered: Boolean(row.mastered),
       at: Date.parse(row.updated_at) || 0,

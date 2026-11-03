@@ -145,7 +145,6 @@ export function FloatingPanel({
               update={update}
               cloud={store.cloud}
               cloudError={store.cloudError}
-              onSync={() => void store.syncCloud()}
               onLogin={onLogin}
               onSignOut={onSignOut}
             />
