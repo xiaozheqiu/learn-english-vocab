@@ -21,7 +21,13 @@ import { useSelection } from "@/hooks/useSelection";
 import { usePageActive } from "@/hooks/usePageActive";
 import { useScrollKeeper } from "@/hooks/useScrollKeeper";
 import type { VocabStore } from "@/hooks/useVocabStore";
-import { BUCKETS, type LevelFilter, type MasteryFilter, type PageSize } from "@/lib/types";
+import {
+  BUCKETS,
+  bucketLabel,
+  type LevelFilter,
+  type MasteryFilter,
+  type PageSize,
+} from "@/lib/types";
 
 export interface WordListPageProps {
   store: VocabStore;
@@ -294,7 +300,7 @@ export function WordListPage({ store }: WordListPageProps) {
 
       {loading ? (
         <div className="px-4 py-16 text-center text-[13px] text-ink-mute" role="status">
-          正在加载 {view.level === "ALL" ? "全部等级" : view.level} 词表…
+          正在加载 {view.level === "ALL" ? "全部等级" : bucketLabel(view.level)} 词表…
         </div>
       ) : (
         <>
@@ -408,7 +414,7 @@ function EmptyState({
 }) {
   // 只有搜索会跨等级，那时文案报「全库」；首字母与词性都在当前等级内生效，
   // 所以「A1 里没有 s 开头的词」是真的，如实报当前板块
-  const scope = level === "ALL" || query.trim() ? "全库" : level;
+  const scope = level === "ALL" || query.trim() ? "全库" : bucketLabel(level);
   const reason = query
     ? `没有匹配「${query}」的词`
     : mode === "done"

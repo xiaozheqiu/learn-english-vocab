@@ -7,6 +7,7 @@ import { useIsDesktop } from "@/hooks/useMediaQuery";
 import {
   LEVELS,
   PAGE_SIZES,
+  bucketLabel,
   type LevelFilter,
   type MasteryFilter,
   type PageSize,
@@ -147,7 +148,7 @@ export function FilterBar({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const levelLabel = level === "ALL" ? "全部等级" : level;
+  const levelLabel = level === "ALL" ? "全部等级" : bucketLabel(level);
   const modeLabel = MODES.find((item) => item.value === mode)?.label ?? "全部";
   // 「有筛选」只算用户主动加的：把默认等级也算进去的话，一进 App 按钮就自带高亮
   const filtered =

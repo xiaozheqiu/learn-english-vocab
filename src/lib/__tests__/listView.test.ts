@@ -8,7 +8,7 @@ import {
   scopeProgress,
   type ListCriteria,
 } from "../listView";
-import { isLevelFilter, type Word } from "../types";
+import { bucketLabel, isLevelFilter, type Word } from "../types";
 
 function w(level: Word["level"], word: string, pos = "n."): Word {
   return {
@@ -225,7 +225,11 @@ describe("词性与首字母筛选", () => {
   });
 
   it("三个条件一起用：A1 + a 开头 + 名词 = 只剩 apple", () => {
-    const rows = filterWords(MIXED, { ...ALL, level: "A1", initial: "a", pos: "n" }, masteredOf([]));
+    const rows = filterWords(
+      MIXED,
+      { ...ALL, level: "A1", initial: "a", pos: "n" },
+      masteredOf([]),
+    );
     expect(rows.map((r) => r.word)).toEqual(["apple"]);
   });
 
@@ -306,5 +310,25 @@ describe("板块掌握进度", () => {
     expect(info.total).toBe(0);
     expect(info.ratio).toBe(0);
     expect(Number.isNaN(info.ratio)).toBe(false);
+  });
+});
+
+/**
+ * 板块显示名。
+ *
+ * PHRASE 是内部代号，界面上必须显示「短语」—— 曾经直接印出
+ * `PHRASE 已掌握 0 / 9`，看着像没做完的半成品。这条锁住映射本身。
+ */
+describe("板块显示名", () => {
+  it("短语用中文，其余等级用代号", () => {
+    expect(bucketLabel("PHRASE")).toBe("短语");
+    expect(bucketLabel("A1")).toBe("A1");
+    expect(bucketLabel("C1")).toBe("C1");
+    expect(bucketLabel("ALL")).toBe("全库");
+  });
+
+  it("PHRASE 是合法筛选值，不会在解析时被丢掉", () => {
+    expect(isLevelFilter("PHRASE")).toBe(true);
+    expect(parseListView({ level: "PHRASE" }, "A1").level).toBe("PHRASE");
   });
 });

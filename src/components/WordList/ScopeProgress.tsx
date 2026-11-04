@@ -1,5 +1,6 @@
 import { Progress } from "@/components/ui/progress";
 import type { ScopeProgressInfo } from "@/lib/listView";
+import { bucketLabel } from "@/lib/types";
 
 /**
  * 板块掌握进度（§2.3）：`A1 已掌握 12 / 900` + 细进度条 + 百分比。
@@ -12,7 +13,7 @@ import type { ScopeProgressInfo } from "@/lib/listView";
  * 选「已掌握」时若跟着变成 900/900，这个数字就只剩装饰作用了。
  */
 export function ScopeProgress({ progress }: { progress: ScopeProgressInfo }) {
-  const label = progress.scope === "ALL" ? "全库" : progress.scope;
+  const label = bucketLabel(progress.scope);
   const percent = Math.round(progress.ratio * 100);
   /**
    * 已掌握 1 / 900 时四舍五入成「0%」，看着像没生效。

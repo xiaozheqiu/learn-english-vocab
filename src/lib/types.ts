@@ -21,6 +21,28 @@ export const BUCKETS = [...LEVELS, PHRASE_LEVEL] as const;
 
 export type LevelFilter = Bucket | "ALL";
 
+/**
+ * 板块的中文显示名。
+ *
+ * A1–C1 直接用代号（那是官方等级名，用户认得），只有 PHRASE 是内部代号、
+ * 必须换成「短语」—— 界面上曾经直接印出 `PHRASE 已掌握 0 / 9`，像没做完的半成品。
+ * 显示名集中在这里，进度条、筛选按钮、空态文案共用，不各写一份。
+ */
+export const BUCKET_LABELS: Record<LevelFilter, string> = {
+  A1: "A1",
+  A2: "A2",
+  B1: "B1",
+  B2: "B2",
+  C1: "C1",
+  PHRASE: "短语",
+  ALL: "全库",
+};
+
+/** 板块代号 → 显示名 */
+export function bucketLabel(bucket: LevelFilter): string {
+  return BUCKET_LABELS[bucket] ?? bucket;
+}
+
 export function isLevelFilter(value: unknown): value is LevelFilter {
   return (
     value === "ALL" || (typeof value === "string" && (BUCKETS as readonly string[]).includes(value))
