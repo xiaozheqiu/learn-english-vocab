@@ -12,6 +12,7 @@
  * 所以：本文件只放不碰网络的东西，`cloudClient.ts` 才是重的那一半。
  */
 import type { CloudState } from "./cloudState";
+import { buildBucketMap, migrateKey } from "./masteryKey";
 
 export type { CloudState };
 
@@ -31,8 +32,8 @@ export interface RemoteRow {
  */
 export const cloudEnabled = Boolean(
   import.meta.env.VITE_SUPABASE_URL &&
-    import.meta.env.VITE_SUPABASE_ANON_KEY &&
-    import.meta.env.VITE_CLOUD_EMAIL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY &&
+  import.meta.env.VITE_CLOUD_EMAIL,
 );
 
 /* ── 合并（纯函数，可单测）──────────────────────────────────── */
@@ -87,6 +88,51 @@ export function mergeMastery(
   }
 
   return { merged, upload };
+}
+
+/**
+ * 把云端的旧主键归一化到新主键。
+ *
+ * 云端存的是同一套旧格式（`A1|arm|n.`），主键规则改掉之后这些行在新词表里
+ * 一个都找不到。不归一化就直接合并的话，它们会被当成「云端有、本地没有的词」
+ * 灌进本地状态 —— 界面上看不见（词表里没有这些 key），但它们会：
+ *   1. 让「已掌握」总数虚高；
+ *   2. 每次同步都被当作待处理项，白跑一遍。
+ *
+ * 同一个词的多行塌成一行时，按「最近的一行说了算」合并：
+ * 已掌握的取最新时间，全是墓碑就当没掌握。这与 mergeMastery 的时间戳规则一致。
+ *
+ * 旧行本身不清洗：删云端数据要额外权限与确认，而这些行不匹配任何词条、
+ * 不会再影响任何界面。留着的成本是几行死数据，删错的成本是用户进度。
+ */
+export function normalizeRemoteKeys(
+  remote: ReadonlyMap<string, RemoteRow>,
+  buckets?: ReadonlyMap<string, string>,
+): Map<string, RemoteRow> {
+  /*
+   * 两套对照，优先级明确：
+   *   1. `buckets`（调用方从真实词表建的）—— 权威，能处理「云端只存了半边数据」
+   *   2. buildBucketMap(remote.keys()) —— 兜底，只能靠云端自己那批 key 推
+   *
+   * 为什么不能逐行直接 migrateKey：arm 的两行分别写着 A1 与 C1，各自换算会得到
+   * A1|arm 与 C1|arm 两个 key —— 一个词被拆成两行，而 C1|arm 在词表里不存在。
+   * 板块只由单词决定，所以必须收敛。
+   */
+  const fallback = buildBucketMap(remote.keys());
+  const out = new Map<string, RemoteRow>();
+  for (const [key, row] of remote) {
+    const word = key.split("|")[1] ?? "";
+    const bucket = buckets?.get(word) ?? fallback.get(word);
+    const next = bucket === undefined ? migrateKey(key) : `${bucket}|${word}`;
+    const prev = out.get(next);
+    if (!prev) {
+      out.set(next, row);
+      continue;
+    }
+    // 时间新的赢；时间相同则「已掌握」赢（宁可多认一个词，也别把进度吞掉）
+    if (row.at > prev.at || (row.at === prev.at && row.mastered)) out.set(next, row);
+  }
+  return out;
 }
 
 /** 两个 Map 内容一致就不换引用，避免 setState 触发下游 effect 自激 */

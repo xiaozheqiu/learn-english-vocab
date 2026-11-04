@@ -2,12 +2,34 @@
 
 export const LEVELS = ["A1", "A2", "B1", "B2", "C1"] as const;
 export type Level = (typeof LEVELS)[number];
-export type LevelFilter = Level | "ALL";
+
+/**
+ * 短语栏。
+ *
+ * `have to` / `according to` / `ice cream` 这类组合词不属于任何 CEFR 等级：
+ * 混在 A1 里会让「A1 有 898 个单词」和「A1 已掌握 12/898」都对不上，
+ * 而且它们是「整块记」的东西，学习节奏和单词也不一样。
+ * 所以单独一栏，主键里 level 记作 PHRASE。
+ */
+export const PHRASE_LEVEL = "PHRASE" as const;
+export type PseudoLevel = typeof PHRASE_LEVEL;
+
+/** 词条真正能落的位置：五个等级 + 短语栏 */
+export type Bucket = Level | PseudoLevel;
+/** 板块筛选能选的范围：字母序在前，短语排在最后 */
+export const BUCKETS = [...LEVELS, PHRASE_LEVEL] as const;
+
+export type LevelFilter = Bucket | "ALL";
 
 export function isLevelFilter(value: unknown): value is LevelFilter {
   return (
-    value === "ALL" || (typeof value === "string" && (LEVELS as readonly string[]).includes(value))
+    value === "ALL" || (typeof value === "string" && (BUCKETS as readonly string[]).includes(value))
   );
+}
+
+/** 只认五个词汇等级（加载分包、算学习进度时用，短语栏不走这条路径） */
+export function isLevel(value: unknown): value is Level {
+  return typeof value === "string" && (LEVELS as readonly string[]).includes(value);
 }
 
 /**
@@ -22,10 +44,19 @@ export type PageSize = (typeof PAGE_SIZES)[number];
 
 /** 词表行（由 src/data/*.json 归一化而来） */
 export interface Word {
-  /** 主键：等级|单词|词性[|序号]，与旧版 localStorage 规则一致 */
+  /**
+   * 主键：`板块|单词`。
+   *
+   * 合并之后一个单词只有一行，词性不进主键 —— 词性差异表达在同一行的 pos 串
+   * 里（`arm  n., v.(C1)`）。旧规则的 `等级|单词|词性[|序号]` 会让同一个词
+   * 占 2~4 行，既是「重复感」的来源，也让勾选粒度变得莫名其妙。
+   * 旧进度由 db.ts 的 migrateLegacyKeys() 换算。
+   */
   key: string;
-  level: Level;
+  /** 所属板块：A1–C1，或 PHRASE（短语栏） */
+  level: Bucket;
   word: string;
+  /** 词性串；跨等级的词性带等级标注，如 `n., v.(C1)` */
   pos: string;
   /**
    * 口语词频学习顺序（1 起）。
@@ -76,10 +107,12 @@ export const DEFAULT_PREFS: Prefs = {
   defaultLevel: "A1",
 };
 
-/** meta store 里真正还在用的两把键 */
+/** meta store 里真正还在用的三把键 */
 export interface MetaState {
   /** 旧 localStorage 是否已迁移 */
   migratedFromLocal: boolean;
+  /** 旧主键（等级|单词|词性）是否已换算成新主键（板块|单词） */
+  migratedKeys: boolean;
   prefs: Prefs;
 }
 

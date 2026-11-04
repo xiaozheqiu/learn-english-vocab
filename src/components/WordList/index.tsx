@@ -21,7 +21,7 @@ import { useSelection } from "@/hooks/useSelection";
 import { usePageActive } from "@/hooks/usePageActive";
 import { useScrollKeeper } from "@/hooks/useScrollKeeper";
 import type { VocabStore } from "@/hooks/useVocabStore";
-import { LEVELS, type LevelFilter, type MasteryFilter, type PageSize } from "@/lib/types";
+import { BUCKETS, type LevelFilter, type MasteryFilter, type PageSize } from "@/lib/types";
 
 export interface WordListPageProps {
   store: VocabStore;
@@ -135,7 +135,7 @@ export function WordListPage({ store }: WordListPageProps) {
   const scopeLoaded =
     (!viewNeedsIndexes || store.indexesReady) &&
     (searching || view.level === "ALL"
-      ? LEVELS.every((level) => loadedLevels.has(level))
+      ? BUCKETS.every((level) => loadedLevels.has(level))
       : loadedLevels.has(view.level));
   useEffect(() => {
     if (!scopeLoaded) return;

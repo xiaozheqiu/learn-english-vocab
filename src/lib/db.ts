@@ -9,6 +9,7 @@
  * 隐私模式打不开 IDB 时整体降级为内存态，由上层展示「本次进度不会保存」。
  */
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import { migrateKey, remapWithBuckets } from "./masteryKey";
 import {
   DB_NAME,
   DB_VERSION,
@@ -35,6 +36,14 @@ export interface Snapshot {
 export const META_KEYS = {
   migratedFromLocal: "migratedFromLocal",
   prefs: "prefs",
+  /**
+   * 主键从 `等级|单词|词性` 改成分片式 `板块|单词` 的那次换算做过了没。
+   *
+   * 与 migratedFromLocal 分开记：那个是「旧版 localStorage → IndexedDB」，
+   * 这个是「旧主键 → 新主键」，两件事发生在不同版本、也可能只发生一件
+   * （新用户只经历后者、或者从没碰过旧版 localStorage 的用户只经历前者）。
+   */
+  migratedKeys: "migratedKeys",
 } as const;
 
 /** v1 遗留的 meta 键：打开库时顺手清掉，不留在用户的存储里 */
@@ -42,6 +51,7 @@ const LEGACY_META_KEYS = ["lockEnabled", "pinHash", "lockGraceUntil", "setupDone
 
 export const DEFAULT_META: MetaState = {
   migratedFromLocal: false,
+  migratedKeys: false,
   prefs: DEFAULT_PREFS,
 };
 
@@ -176,6 +186,7 @@ export async function loadSnapshot(): Promise<Snapshot> {
       migratedFromLocal: Boolean(
         metaMap.get(META_KEYS.migratedFromLocal) ?? DEFAULT_META.migratedFromLocal,
       ),
+      migratedKeys: Boolean(metaMap.get(META_KEYS.migratedKeys) ?? DEFAULT_META.migratedKeys),
       prefs: normalizePrefs(metaMap.get(META_KEYS.prefs)),
     };
 
@@ -306,7 +317,10 @@ async function saveMigratedFlag(): Promise<void> {
  * `existing`：调用方已经读过的快照。启动时上层本来就为渲染读了一次全表，
  * 这里再读一遍只是重复劳动（已掌握 5323 条时多花约 100ms），传进来即可。
  */
-export async function migrateLegacy(existing?: Snapshot): Promise<number> {
+export async function migrateLegacy(
+  buckets: ReadonlyMap<string, string>,
+  existing?: Snapshot,
+): Promise<number> {
   const snapshot = existing ?? (await loadSnapshot());
   if (snapshot.meta.migratedFromLocal) return 0;
 
@@ -321,10 +335,122 @@ export async function migrateLegacy(existing?: Snapshot): Promise<number> {
   }
 
   if (legacy.length > 0) {
-    await saveMastery(legacy, true);
+    // 旧 localStorage 里的键还是旧格式（等级|单词|词性），一并换算
+    const remapped = new Set<string>();
+    for (const key of legacy) remapped.add(remapWithBuckets(key, buckets) ?? migrateKey(key));
+    await saveMastery([...remapped], true);
     // 旧键不删，保留作备份
   }
 
   await saveMigratedFlag();
   return legacy.length;
+}
+
+/**
+ * 启动时有没有待做的迁移（只查 meta 标记，不读全表、不碰词表）。
+ *
+ * 存在的意义是不让「迁移要读词表」变成首屏的常态开销：绝大多数用户升级过一次
+ * 之后这里返回全 false，首屏就完全不必 loadAll，仍然只加载默认等级。
+ */
+export async function pendingMigrations(): Promise<{ keys: boolean; legacy: boolean }> {
+  /** 旧 localStorage 还没导过，且确实有数据 → 才值得为它读词表 */
+  let hasLegacyData: boolean;
+  try {
+    const raw = localStorage.getItem(LEGACY_MASTERED_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    hasLegacyData = Array.isArray(parsed) && parsed.length > 0;
+  } catch {
+    hasLegacyData = false;
+  }
+
+  const handle = await db();
+  if (!handle) {
+    memory ??= emptySnapshot();
+    return {
+      keys: !memory.meta.migratedKeys,
+      legacy: !memory.meta.migratedFromLocal && hasLegacyData,
+    };
+  }
+  const [keysDone, legacyDone] = await Promise.all([
+    handle.get("meta", META_KEYS.migratedKeys),
+    handle.get("meta", META_KEYS.migratedFromLocal),
+  ]).catch(() => [true, true] as const);
+  return { keys: !keysDone, legacy: !legacyDone && hasLegacyData };
+}
+
+/**
+ * 把库里已有的旧主键换算成新主键，跑一次就记标记。
+ *
+ * ## 为什么必须做
+ *
+ * 老版本主键是 `等级|单词|词性[|序号]`，新主键是 `板块|单词`。两套格式
+ * **没有任何一个 key 能直接命中**（实测 5321 个旧 key 命中 0 个）——
+ * 不换算的话，所有老用户升级后打开就是「进度全空」，而且下次同步还会把
+ * 空进度推上云端，把服务端那份也一起覆盖。
+ *
+ * ## 为什么在本地做而不是在云端做
+ *
+ * 云端的 word_key 是同一套旧格式，服务端没有词表、无法判断「哪些 key 属于
+ * 同一个词」。本地有词表、有 level 与词性，换算在这里做，再把结果作为
+ * 一次普通的 upsert 推上去（新 key 在云端没有行 → mergeMastery 会带上它），
+ * 顺带就把云端也迁完了，不需要额外的服务端脚本。
+ *
+ * 返回换算前后的条数；已经做过则返回 null。
+ */
+export async function migrateMasteryKeys(
+  buckets: ReadonlyMap<string, string>,
+): Promise<{ before: number; after: number } | null> {
+  /** 一条旧 key → 新 key。词表里没有这个词时保留旧格式，不硬塞到错误板块 */
+  const remap = (key: string) => remapWithBuckets(key, buckets) ?? migrateKey(key);
+
+  const handle = await db();
+  if (!handle) {
+    // 内存态：内存就是全部数据，就地换算
+    memory ??= emptySnapshot();
+    const snapshot = memory;
+    if (snapshot.meta.migratedKeys) return null;
+    const before = snapshot.mastery.size;
+    const remapped = new Map<string, number>();
+    for (const [key, at] of snapshot.mastery) {
+      const next = remap(key);
+      // 同一个词的多行塌成一行时保留最新的标记时间
+      const prev = remapped.get(next);
+      if (prev === undefined || at > prev) remapped.set(next, at);
+    }
+    snapshot.mastery = remapped;
+    snapshot.meta = { ...snapshot.meta, migratedKeys: true };
+    return { before, after: remapped.size };
+  }
+
+  // 标记要先查一遍：没有这一步，每次启动都会把全表重写一次
+  const done = await handle.get("meta", META_KEYS.migratedKeys);
+  if (done) return null;
+
+  const rows = await handle.getAll("mastery");
+  if (rows.length === 0) {
+    await handle.put("meta", true, META_KEYS.migratedKeys);
+    return { before: 0, after: 0 };
+  }
+
+  const remapped = new Map<string, number>();
+  for (const row of rows) {
+    const next = remap(row.key);
+    const at = Number(row.at) || 0;
+    const prev = remapped.get(next);
+    if (prev === undefined || at > prev) remapped.set(next, at);
+  }
+
+  /*
+   * 先把新 key 全部写进去，再删旧 key。
+   *
+   * 顺序不能反：中途崩掉时，最坏结果是「新旧并存」（下次启动重跑一遍，
+   * 结果一样），而反过来就会出现「旧的删了、新的还没写」—— 那才是真的丢进度。
+   */
+  const tx = handle.transaction("mastery", "readwrite");
+  for (const [key, at] of remapped) await tx.store.put({ key, at });
+  for (const row of rows) if (!remapped.has(row.key)) await tx.store.delete(row.key);
+  await tx.done;
+
+  await handle.put("meta", true, META_KEYS.migratedKeys);
+  return { before: rows.length, after: remapped.size };
 }

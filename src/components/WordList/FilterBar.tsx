@@ -268,6 +268,7 @@ export function FilterBar({
               >
                 {[
                   ...LEVELS.map((item) => ({ value: item as LevelFilter, label: item })),
+                  { value: "PHRASE" as LevelFilter, label: "短语" },
                   { value: "ALL" as LevelFilter, label: "全部" },
                 ].map((item) => (
                   <Button
@@ -332,7 +333,7 @@ export function FilterBar({
             {/*
               牛津官方词表：这是判断「这个词到底该不该学」最权威的一把尺子。
               Oxford 3000/5000 是牛津按学习者需求筛的清单，比任何词频阈值都可靠。
-              词表里 4955 个词有 4888 个在官方表内，剩下 95 个可以单独筛出来看。
+              词表里 4955 个词有 4861 个在官方表内，剩下 94 个可以单独筛出来看。
             */}
             <section className="mt-4" aria-labelledby="filter-oxford-title">
               <h3 id="filter-oxford-title" className="text-[13px] font-medium text-ink">
@@ -417,7 +418,7 @@ export function FilterBar({
               停在 A1 选 S → 只出 A1 里 s 开头的词；想跨等级看就把等级改成「全部」。
               不要把它做成「选字母就跳全库」：那等于替用户改掉了他明确设过的
               等级条件，停在 A1 的人会被莫名拉走。
-              没有 X 开头的词（5323 条已核），所以按钮里不给 X。
+              没有 X 开头的词（4955 条已核），所以按钮里不给 X。
             */}
             <section className="mt-4" aria-labelledby="filter-initial-title">
               <h3 id="filter-initial-title" className="text-[13px] font-medium text-ink">

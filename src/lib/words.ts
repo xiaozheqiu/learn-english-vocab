@@ -1,8 +1,14 @@
 /** 词表加载、主键生成、释义抽取（§6 lib/words.ts） */
-import { type Level, type RawRow, type Tier, type Word } from "./types";
-import { LEVELS } from "./types";
+import { type Bucket, type RawRow, type Tier, type Word } from "./types";
+import { BUCKETS, PHRASE_LEVEL } from "./types";
 
-const cache = new Map<Level, Word[]>();
+/*
+ * 缓存按「板块」分片，六片：五个词汇等级 + 短语栏。
+ *
+ * 短语栏不参与「等级加载」那套逻辑（它没有 CEFR 等级，也没有分包顺序要求），
+ * 但对缓存来说就是又一片 JSON，用同一套机制最省事。
+ */
+const cache = new Map<Bucket, Word[]>();
 
 /**
  * 口语词频顺序表（scripts/gen-tiers.py 生成）。
@@ -85,47 +91,50 @@ export function loadTierOrder(): Promise<Map<string, TierInfo>> {
 }
 
 /**
- * 旧规则主键：`等级|单词|词性[|序号]`。
- * 同等级下 (词, 词性) 重复时给键加序号，避免两条词共用一个勾。
- * 必须与旧版 index.html / data.js 完全一致，否则老用户进度对不上。
+ * 短语判定：含空格、且不含逗号。
  *
- * 注意：主键里的「序号」是**重复计数**（第几条同名同词性），
- * 不是源数据第 5 列的 seq —— 后者从未参与主键，所以裁掉不影响历史进度。
+ * `have to` / `according to` / `ice cream` 是短语；`a, an` 含空格但含逗号，
+ * 它是冠词 a 与 an 两个书写变体并列，不是短语。连字符词（`T-shirt`）不含
+ * 空格，仍是单词。
+ *
+ * 规则放在这里而不是在数据里加字段：数据多存一个 kind 就多一份要跟着改的真值，
+ * 而这条判定是纯函数，两边（这里与 scripts/merge-words.py）用同一条规则即可。
  */
-export function buildKeys(level: Level, rows: readonly RawRow[]): Word[] {
-  const base = rows.map<Word>((r) => ({
-    key: "",
-    level,
-    word: String(r[0] ?? "").trim(),
-    pos: String(r[1] ?? "").trim(),
-    rank: 0,
-    tier: "core" as Tier,
-    ox3000: false,
-    ox5000: false,
-  }));
+export function isPhrase(word: string): boolean {
+  return word.includes(" ") && !word.includes(",");
+}
 
-  const counts = new Map<string, number>();
-  for (const w of base) {
-    const stem = `${w.level}|${w.word}|${w.pos}`;
-    counts.set(stem, (counts.get(stem) ?? 0) + 1);
-  }
-
-  const seen = new Map<string, number>();
-  for (const w of base) {
-    const stem = `${w.level}|${w.word}|${w.pos}`;
-    if ((counts.get(stem) ?? 0) > 1) {
-      const n = (seen.get(stem) ?? 0) + 1;
-      seen.set(stem, n);
-      w.key = `${stem}|${n}`;
-    } else {
-      w.key = stem;
-    }
-  }
-  return base;
+/**
+ * 词条主键：`等级|单词`。
+ *
+ * 合并之后一个单词只有一行，词性不再参与主键 —— 词性差异表达在同一行的
+ * pos 串里（`arm  n., v.(C1)`）。旧规则是 `等级|单词|词性[|序号]`，那份
+ * 数据里同一个词会占 2~4 行，既是「重复感」的来源，也让勾选粒度莫名其妙。
+ *
+ * 短语不参与等级：它们的 level 记作 `PHRASE`，主键随之是 `PHRASE|have to`。
+ * 这样短语有独立的一栏，不会挤进 A1 把 A1 的进度分母撑大。
+ *
+ * 老进度由 migrateLegacyKeys() 负责换算，不靠这里兼容旧格式。
+ */
+export function buildKeys(level: Bucket, rows: readonly RawRow[]): Word[] {
+  return rows.map<Word>((r) => {
+    const word = String(r[0] ?? "").trim();
+    return {
+      // 短语一律落在 PHRASE 栏，即使调用方按 A1 传进来
+      key: `${isPhrase(word) ? PHRASE_LEVEL : level}|${word}`,
+      level: isPhrase(word) ? PHRASE_LEVEL : level,
+      word,
+      pos: String(r[1] ?? "").trim(),
+      rank: 0,
+      tier: "core" as Tier,
+      ox3000: false,
+      ox5000: false,
+    };
+  });
 }
 
 /** 动态导入单个等级的分包 */
-async function importLevel(level: Level): Promise<readonly RawRow[]> {
+async function importLevel(level: Bucket): Promise<readonly RawRow[]> {
   const mod = (await import(`../data/${level}.json`)) as { default: readonly RawRow[] };
   return mod.default;
 }
@@ -137,7 +146,7 @@ async function importLevel(level: Level): Promise<readonly RawRow[]> {
  * 随后才到。这张表记的是「补没补」，不是「载没载」—— 两者解耦之后，首屏才能
  * 只解析一个等级的字面量，不必等那 228KB 的索引。
  */
-const enrichedLevels = new Set<Level>();
+const enrichedLevels = new Set<Bucket>();
 
 /**
  * 给一组词条补上 rank / tier / 牛津标记。
@@ -168,7 +177,7 @@ async function enrich(words: Word[]): Promise<void> {
  * 默认视图下档位与牛津两档不生效，看不出来；但用户持久化的视图可能正开着它们，
  * 那种情况下调用方必须传 true，否则会先画出一份错的筛选结果。
  */
-export async function loadLevel(level: Level, withIndexes = true): Promise<Word[]> {
+export async function loadLevel(level: Bucket, withIndexes = true): Promise<Word[]> {
   let words = cache.get(level);
   if (!words) {
     words = buildKeys(level, await importLevel(level));
@@ -181,14 +190,14 @@ export async function loadLevel(level: Level, withIndexes = true): Promise<Word[
   return words;
 }
 
-/** 搜索需要跨等级，带进度回调。走过的等级一律补齐索引。 */
+/** 搜索需要跨板块，带进度回调。走过的板块一律补齐索引。 */
 export async function loadAll(onProgress?: (done: number, total: number) => void): Promise<Word[]> {
   let done = 0;
   const groups = await Promise.all(
-    LEVELS.map(async (level) => {
+    BUCKETS.map(async (level) => {
       const words = await loadLevel(level);
       done += 1;
-      onProgress?.(done, LEVELS.length);
+      onProgress?.(done, BUCKETS.length);
       return words;
     }),
   );
@@ -203,7 +212,7 @@ export async function loadAll(onProgress?: (done: number, total: number) => void
  * 地方都必须先过这里 —— 否则 A1 会显示「认脸档 0 条」这种看着像真空结果的错。
  */
 export async function enrichAll(): Promise<Word[]> {
-  for (const level of LEVELS) {
+  for (const level of BUCKETS) {
     const words = cache.get(level);
     if (words && !enrichedLevels.has(level)) {
       await enrich(words);
@@ -215,14 +224,15 @@ export async function enrichAll(): Promise<Word[]> {
 
 /** 已加载的等级是否都补过索引（供界面判断「档位/牛津筛选能不能信」） */
 export function indexesReady(): boolean {
-  return LEVELS.every((level) => !cache.has(level) || enrichedLevels.has(level));
+  return BUCKETS.every((level) => !cache.has(level) || enrichedLevels.has(level));
 }
 
 /** 已加载的等级（同步读取，供需要立刻渲染的场景） */
 export function cachedAll(): Word[] {
-  return LEVELS.flatMap((level) => cache.get(level) ?? []);
+  return BUCKETS.flatMap((level) => cache.get(level) ?? []);
 }
 
-export function isLoaded(levels: readonly Level[]): boolean {
+/** 五个词汇等级（不含短语栏）—— 首屏快路径与「全部等级是否到齐」只认这个 */
+export function isLoaded(levels: readonly Bucket[]): boolean {
   return levels.every((level) => cache.has(level));
 }

@@ -74,7 +74,7 @@ try {
   await page.waitForTimeout(200);
 
   /*
-   * 「难度（CEFR）」筛选已移除：它和等级在 5323 条里 5280 条完全一致，
+   * 「难度（CEFR）」筛选已移除：它和等级在 4955 条里完全一致，
    * 等于同一个轴做了两遍。这组断言盯住它不得回到抽屉里。
    */
   await openFilter(page);
@@ -263,7 +263,7 @@ try {
    * 首字母是普通筛选条件：在当前等级内生效，不得把用户拉离他设的等级。
    *
    * 这条曾经做反过 —— 选字母就悄悄跳到全库，停在 A1 的人会被莫名带走。
-   * 所以这里钉两条：停在 A1 选 S 仍全部是 A1（A1 里有 96 条 s 开头，
+   * 所以这里钉两条：停在 A1 选 S 仍全部是 A1（A1 里有 95 个 s 开头的词，
    * 不会退化成空态，断言才有力）；把等级改成「全部」后同一个 S 才跨等级。
    */
   await openFilter(page);
@@ -282,13 +282,13 @@ try {
   const a1s = await page
     .locator('[role="row"][data-key]')
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-key").split("|")[0]));
-  // 非空 + 全是 A1 + 总数远少于全库的 603（A1 里只有 96 条），三条缺一不可
+  // 非空 + 全是 A1 + 总数远少于全库的 555（A1 里只有 95 条），三条缺一不可
   report.check(
     "filter.initialStaysInsideLevel",
     a1s.length > 0 &&
       a1s.every((level) => level === "A1") &&
-      Number(a1Preview) === 96 &&
-      Number(await page.locator('[data-testid="word-grid"]').getAttribute("aria-rowcount")) === 96,
+      Number(a1Preview) === 95 &&
+      Number(await page.locator('[data-testid="word-grid"]').getAttribute("aria-rowcount")) === 95,
     `preview=${a1Preview} levels=${[...new Set(a1s)].join(",")}`,
   );
 
@@ -307,14 +307,14 @@ try {
     .locator('[role="row"][data-key]')
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-key").split("|")[0]));
   /*
-   * 断言的是总数从 96 涨到 603，不是「第一页混着多个等级」——
+   * 断言的是总数从 95 涨到 555，不是「第一页混着多个等级」——
    * 词表按 A1→C1 顺序平铺，第一页本来就全是 A1 的词，拿页内等级分布
    * 判断跨没跨等级是错的（头一版就这么写错了一次）。
    */
   report.check(
     "filter.initialCrossLevelsOnlyWhenLevelIsAll",
-    Number(allS) === 603,
-    `total=${allS}（A1 单独只有 96）`,
+    Number(allS) === 555,
+    `total=${allS}（A1 单独只有 95）`,
   );
 
   // 复原：回到全部等级、无词性、无字母
@@ -323,7 +323,7 @@ try {
   const resetPreview = await page
     .locator('[data-testid="filter-preview"]')
     .getAttribute("data-count");
-  report.check("filter.resetClearsNewDimensions", Number(resetPreview) === 5323, resetPreview);
+  report.check("filter.resetClearsNewDimensions", Number(resetPreview) === 4955, resetPreview);
   await nav.dialog(page).locator('[data-testid="filter-done"]').click();
   await waitDialogClosed(page);
   await waitRows(page, 20);
@@ -481,7 +481,7 @@ try {
   const dialog = nav.dialog(page);
   report.check("panel.noTabs", (await page.getByRole("tab").count()) === 0);
   const aboutText = await dialog.innerText();
-  report.check("panel.keepsAbout", /关于/.test(aboutText) && /5323/.test(aboutText));
+  report.check("panel.keepsAbout", /关于/.test(aboutText) && /4955/.test(aboutText));
   report.check(
     "panel.noDataSection",
     (await page.getByRole("button", { name: /导出 JSON/ }).count()) === 0 &&

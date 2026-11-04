@@ -16,7 +16,7 @@ describe("首屏快路径", () => {
     const words = await loadLevel("A1", false);
     expect(words.length).toBeGreaterThan(0);
     // 主键与单词本身是本地算出来的，不依赖索引
-    expect(words[0]!.key).toBe("A1|a, an|indefinite article");
+    expect(words[0]!.key).toBe("A1|a, an");
     // 索引没来，台账字段停在默认值 —— 这正是「省掉 228KB」的代价
     expect(words.every((w) => w.rank === 0 && w.tier === "core")).toBe(true);
     expect(words.every((w) => !w.ox3000 && !w.ox5000)).toBe(true);
@@ -43,10 +43,10 @@ describe("全量加载", () => {
     expect(c1.every((w) => w.rank > 0)).toBe(true);
   });
 
-  it("进度回调依次报告 1..5", async () => {
+  it("进度回调依次报告 1..6（五个等级 + 短语栏）", async () => {
     const seen: number[] = [];
     await loadAll((done) => seen.push(done));
-    expect([...seen].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+    expect([...seen].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });
 

@@ -29,6 +29,11 @@ OUT = os.path.join(ROOT, "src", "data", "oxford.json")
 LEVELS = ["A1", "A2", "B1", "B2", "C1"]
 
 
+def is_phrase(word):
+    """含空格且不含逗号 = 短语；`a, an` 是冠词两个书写变体，不算。与前端同一条规则"""
+    return " " in word and "," not in word
+
+
 def npos(p):
     """牛津词性 → 统一缩写，用于和项目词条声明的词性比对"""
     p = p.strip().rstrip(",").lower()
@@ -98,7 +103,9 @@ def main():
         # 与 data/*.js 里释义的分段数对齐：最多 2 段（见写数据时的 tidy 规则）
         segments = len([p for p in e["cn"].split("；") if p.strip()])
         picked = picked[: max(segments, 1)]
-        key = f'{e["level"]}|{e["word"]}|{e["pos"]}'
+        # 主键是「板块|单词」：一个词只有一行，词性不进主键
+        bucket = "PHRASE" if is_phrase(e["word"]) else e["level"]
+        key = f'{bucket}|{e["word"]}'
         flags = {}
         if any(s.get("ox3000") for s in senses):
             flags["ox3000"] = True

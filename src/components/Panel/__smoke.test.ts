@@ -20,7 +20,7 @@ describe("关于分区（§2.3）", () => {
     const html = render(createElement(AboutSection, { onOpenGuide: () => {} }));
     // 版本号来自构建时注入，不写死字面量 —— 否则每次发版都要改测试
     expect(html).toContain(`v${APP_VERSION}`);
-    expect(html).toContain("5323");
+    expect(html).toContain("4955");
     expect(html).toContain("本机浏览器");
   });
 

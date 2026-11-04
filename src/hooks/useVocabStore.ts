@@ -9,16 +9,20 @@ import {
   isMemoryMode,
   loadSnapshot,
   migrateLegacy,
+  migrateMasteryKeys,
+  pendingMigrations,
   probeStorage,
   saveMastery,
   savePrefs as dbSavePrefs,
 } from "@/lib/db";
 import { cachedAll, enrichAll, indexesReady, isLoaded, loadAll, loadLevel } from "@/lib/words";
+import { buildBucketMapFromWords } from "@/lib/masteryKey";
 import { LIST_VIEW_KEY } from "@/lib/listView";
 import {
   cloudEnabled,
   loadCloudClient,
   mergeMastery,
+  normalizeRemoteKeys,
   sameMastery,
   type CloudState,
 } from "@/lib/cloud";
@@ -27,7 +31,7 @@ import {
   DEFAULT_PREFS,
   LEGACY_MASTERED_KEY,
   LEVELS,
-  type Level,
+  type Bucket,
   type LevelFilter,
   type Prefs,
   type Word,
@@ -112,6 +116,13 @@ export function useVocabStore(): VocabStore {
    */
   const aliveRef = useRef(true);
   const syncRef = useRef<() => Promise<void>>(async () => undefined);
+  /**
+   * 「单词 → 板块」的权威对照，迁移时建一次，云端归一化复用它。
+   *
+   * 放进 ref 而不是 state：同步函数通过 syncRef 拿最新闭包，但换 state 会
+   * 触发重渲染，而这份表只影响一次性的 key 换算，不需要驱动界面。
+   */
+  const bucketsRef = useRef<ReadonlyMap<string, string>>(new Map());
 
   syncRef.current = async () => {
     if (!cloudEnabled) return;
@@ -131,8 +142,13 @@ export function useVocabStore(): VocabStore {
       const cloud = await loadCloudClient();
       if (!aliveRef.current) return;
 
-      const remote = await cloud.pull();
+      const pulled = await cloud.pull();
       if (!aliveRef.current) return;
+      /**
+       * 云端存的还是旧主键（`等级|单词|词性`），先归一化再合并。
+       * 归一化之后就与本地新主键同一套口径，下面的合并逻辑不用分情况。
+       */
+      const remote = pulled === null ? null : normalizeRemoteKeys(pulled, bucketsRef.current);
       if (remote === null) {
         /**
          * pull 返回 null 只有两种含义：没登录，或者已登录但读失败。
@@ -184,7 +200,11 @@ export function useVocabStore(): VocabStore {
         // 云端更新的部分落地：内存与 IndexedDB 一起改，否则刷新就丢
         const added = [...merged].filter(([key]) => !local.mastery.has(key));
         const removed = [...local.mastery.keys()].filter((key) => !merged.has(key));
-        if (added.length) await saveMastery(added.map(([key]) => key), true);
+        if (added.length)
+          await saveMastery(
+            added.map(([key]) => key),
+            true,
+          );
         if (removed.length) await saveMastery(removed, false);
         if (!aliveRef.current) return;
         setMastered(merged);
@@ -325,6 +345,28 @@ export function useVocabStore(): VocabStore {
          * 现在只读一次快照，探测与它并行，迁移直接吃现成的。
          */
         const storageProbe = probeStorage();
+
+        /**
+         * 主键换算必须在读快照之前跑。
+         *
+         * 换了主键之后旧 key 一个都对不上新词表，晚一步就会先渲染出一屏
+         * 「全部未掌握」，而且那份空进度会在随后的云端同步里被推上去，
+         * 把服务端的历史一起覆盖掉。所以顺序只能是「先换算、再读」。
+         *
+         * 换算要用**真实词表**做对照（一个词落在哪个板块，只有词表知道），
+         * 但只有真有待迁数据时才付这份代价：升级过一次之后就只剩一次
+         * meta 查询，首屏仍然只加载默认等级。没迁移过的人（绝大多数打开次数）
+         * 不会因为这条逻辑多下载 5 个分包。
+         */
+        const pending = await pendingMigrations();
+        let buckets: ReadonlyMap<string, string> = new Map();
+        if (pending.keys || pending.legacy) {
+          const vocab = await loadAll().catch(() => [] as Word[]);
+          buckets = buildBucketMapFromWords(vocab);
+          bucketsRef.current = buckets;
+          if (pending.keys) await migrateMasteryKeys(buckets).catch(() => null);
+        }
+
         const snapshot = await loadSnapshot();
         if (!alive) return;
 
@@ -338,7 +380,7 @@ export function useVocabStore(): VocabStore {
          * 已掌握标记（刷新一次才出现，用户会以为进度丢了）。
          */
         const importLegacy = async () => {
-          const imported = await migrateLegacy(snapshot).catch(() => 0);
+          const imported = await migrateLegacy(buckets, snapshot).catch(() => 0);
           if (!alive || imported <= 0) return;
           const raw = window.localStorage.getItem(LEGACY_MASTERED_KEY);
           if (!raw) return;
@@ -403,7 +445,8 @@ export function useVocabStore(): VocabStore {
     let alive = true;
     (async () => {
       try {
-        const firstLevel = prefs.defaultLevel === "ALL" ? "A1" : (prefs.defaultLevel as Level);
+        const firstLevel: Bucket =
+          prefs.defaultLevel === "ALL" ? "A1" : (prefs.defaultLevel as Bucket);
         const first = await loadLevel(firstLevel, firstPaintNeedsIndexes());
         if (!alive) return;
         setWords((current) => (sameWords(current, first) ? current : first));
@@ -458,7 +501,7 @@ export function useVocabStore(): VocabStore {
     }
     setLoadingWords(true);
     try {
-      const level = await loadLevel(target as Level);
+      const level = await loadLevel(target as Bucket);
       setWords((current) => mergeWords(current, level));
       setIndexesReadyState(indexesReady());
     } finally {

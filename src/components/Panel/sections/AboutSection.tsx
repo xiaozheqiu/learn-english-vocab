@@ -1,4 +1,14 @@
-import { BookOpen, CloudOff, Cloud, Database, Info, Loader2, LogOut, MonitorDown, RefreshCw } from "lucide-react";
+import {
+  BookOpen,
+  CloudOff,
+  Cloud,
+  Database,
+  Info,
+  Loader2,
+  LogOut,
+  MonitorDown,
+  RefreshCw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { CheckResult, PwaUpdate } from "@/hooks/usePwaUpdate";
@@ -111,7 +121,10 @@ export function AboutSection({
           数据来源
         </h3>
         <ul className="mt-1 space-y-1 text-[12px] leading-5 text-ink-soft">
-          <li className="tnum">Oxford 5000 词表，共 5323 条，覆盖 A1–C1 五个等级</li>
+          <li className="tnum">
+            Oxford 5000 词表，共 4955 个单词，覆盖 A1–C1 五个等级，另有 9 条常用短语单列
+          </li>
+          <li>一个词只有一个条目，多个词性并排写在词性栏里</li>
           <li>词性与中文释义取自词表原数据，未做改写</li>
           <li>词表只显示单词与词性；释义不展示、也不参与搜索，点单词跳三方词典查</li>
           <li>已掌握标记先存在本机浏览器，登录后可同步到其他设备</li>
