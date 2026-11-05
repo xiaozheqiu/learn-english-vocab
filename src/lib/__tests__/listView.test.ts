@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyOrder,
   defaultListView,
   filterWords,
   initialOf,
@@ -77,6 +78,8 @@ describe("视图状态解析", () => {
       oxford: "all",
       pos: "all",
       initial: "all",
+      order: "default",
+      seed: 0,
       query: "ab",
       page: 7,
     });
@@ -132,8 +135,20 @@ describe("词表过滤", () => {
 describe("筛选维度", () => {
   it("等级 / 档位 / 牛津词表 / 词性 / 首字母 / 掌握状态，没有第二套难度轴", () => {
     const criteria = defaultListView("A1");
+    // 排序不是筛选维度：它不改变结果集，所以不在 ListCriteria 里
     expect(Object.keys(criteria).sort()).toEqual(
-      ["initial", "level", "mode", "oxford", "page", "pos", "query", "tier"].sort(),
+      [
+        "initial",
+        "level",
+        "mode",
+        "order",
+        "oxford",
+        "page",
+        "pos",
+        "query",
+        "seed",
+        "tier",
+      ].sort(),
     );
   });
 
@@ -274,6 +289,8 @@ describe("视图状态里的新维度", () => {
       oxford: "all",
       pos: "all",
       initial: "all",
+      order: "default",
+      seed: 0,
       query: "ab",
       page: 3,
     });
@@ -285,6 +302,54 @@ describe("视图状态里的新维度", () => {
     expect(parseListView({ initial: "s" }, "A1").initial).toBe("s");
     expect(parseListView({ initial: "S" }, "A1").initial).toBe("all");
     expect(parseListView({ initial: "x" }, "A1").initial).toBe("all");
+  });
+});
+
+/**
+ * 排序只有一件事必须成立：同一颗种子下顺序完全确定。
+ *
+ * 这条约束不能靠肉眼验收 —— 若排序每次渲染都重算，翻页会看到另一批词、
+ * 「刚才那一页」再也回不去，而界面上表现为「偶尔怪怪的」，很难归因。
+ */
+describe("排序", () => {
+  const many: Word[] = Array.from({ length: 60 }, (_, i) =>
+    w("A1", `word${String(i).padStart(2, "0")}`),
+  );
+
+  it("默认排序原样返回，不动输入顺序", () => {
+    expect(applyOrder(many, "default", 123).map((x) => x.key)).toEqual(many.map((x) => x.key));
+  });
+
+  it("同一颗种子重复调用给出完全相同的顺序", () => {
+    const a = applyOrder(many, "random", 42).map((x) => x.key);
+    const b = applyOrder(many, "random", 42).map((x) => x.key);
+    expect(a).toEqual(b);
+  });
+
+  it("换种子给出另一种排法", () => {
+    const a = applyOrder(many, "random", 42).map((x) => x.key);
+    const b = applyOrder(many, "random", 43).map((x) => x.key);
+    expect(a).not.toEqual(b);
+  });
+
+  it("乱序不增删词条，只是换顺序", () => {
+    const shuffled = applyOrder(many, "random", 7).map((x) => x.key);
+    expect(shuffled).toHaveLength(many.length);
+    expect([...shuffled].sort()).toEqual(many.map((x) => x.key).sort());
+  });
+
+  it("确实打散了字母序：与原始顺序不同的位置占多数", () => {
+    const original = many.map((x) => x.key);
+    const shuffled = applyOrder(many, "random", 7).map((x) => x.key);
+    const samePosition = shuffled.filter((key, i) => key === original[i]).length;
+    // 60 条里位置完全没变的期望值约 1 条；给到 8 已是极宽松的上界
+    expect(samePosition).toBeLessThan(8);
+  });
+
+  it("不修改传入的数组", () => {
+    const source = many.map((x) => x.key);
+    applyOrder(many, "random", 1);
+    expect(many.map((x) => x.key)).toEqual(source);
   });
 });
 

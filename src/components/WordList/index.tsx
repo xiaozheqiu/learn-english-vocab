@@ -8,6 +8,7 @@ import { WordRow as MemoRow } from "./WordRow";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  applyOrder,
   filterWords,
   loadListView,
   saveListView,
@@ -31,6 +32,16 @@ import {
 
 export interface WordListPageProps {
   store: VocabStore;
+}
+
+/**
+ * 新种子。
+ *
+ * 用毫秒时间戳而不是 Math.random()：它的取值天然不重复，且人眼可读 ——
+ * 将来要复现「那天那次乱序」时，localStorage 里存的就是一个能对上的数字。
+ */
+function nextSeed(): number {
+  return Date.now();
 }
 
 /** 词表页（§5 F1 / §9 验收 2、3） */
@@ -86,8 +97,17 @@ export function WordListPage({ store }: WordListPageProps) {
     void ensureIndexes();
   }, [ensureIndexes, view.tier, view.oxford]);
 
+  /**
+   * 筛选 + 排序。
+   *
+   * 排序放在筛选之后：先定「这一屏该有哪几条」，再决定它们的先后 ——
+   * 反过来会让页数先按乱序算一遍，白做一次全量洗牌。
+   *
+   * 乱序的种子来自 view，所以同一轮内顺序稳定：翻页、勾选、切标签页都不会变，
+   * 只有重新点一次「确定」换种子才重排。
+   */
   const filtered = useMemo(
-    () => filterWords(store.words, view, store.mastered),
+    () => applyOrder(filterWords(store.words, view, store.mastered), view.order, view.seed),
     [store.mastered, store.words, view],
   );
 
@@ -238,6 +258,15 @@ export function WordListPage({ store }: WordListPageProps) {
         oxford: next.oxford,
         pos: next.pos,
         initial: next.initial,
+        order: next.order,
+        /**
+         * 每次「确定」都换一颗种子，等于再点一次就重洗一遍。
+         *
+         * 不另做一个「换一批」按钮：乱序这件事本来就没有别的操作需要它，
+         * 多一个按钮只是把同一次动作拆成两个入口 —— 想重排就打开筛选再点一次确定。
+         * 回到「默认」时种子归零，下次切回随机是干净的一轮，不会沿用上一轮的排法。
+         */
+        seed: next.order === "random" ? nextSeed() : 0,
         page: 1,
       }));
       if (next.pageSize !== pageSize) {
@@ -257,6 +286,8 @@ export function WordListPage({ store }: WordListPageProps) {
       oxford: "all",
       pos: "all",
       initial: "all",
+      order: "default",
+      seed: 0,
       query: "",
       page: 1,
     }));
@@ -280,6 +311,7 @@ export function WordListPage({ store }: WordListPageProps) {
           oxford={view.oxford}
           pos={view.pos}
           initial={view.initial}
+          order={view.order}
           defaultLevel={store.prefs.defaultLevel}
           query={view.query}
           pageSize={pageSize}

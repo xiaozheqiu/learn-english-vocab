@@ -87,7 +87,7 @@ try {
     .locator('[role="dialog"] [data-testid^="filter-"]')
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
   report.check(
-    "filter.sectionsAreLevelTierOxfordPosInitialModeSize",
+    "filter.sectionsAreLevelTierOxfordPosInitialModeOrderSize",
     [
       "filter-level",
       "filter-tier",
@@ -95,6 +95,7 @@ try {
       "filter-pos",
       "filter-initial",
       "filter-mode",
+      "filter-order",
       "filter-size",
     ].every((id) => filterSections.includes(id)),
     filterSections.join(","),
@@ -327,6 +328,124 @@ try {
   await nav.dialog(page).locator('[data-testid="filter-done"]').click();
   await waitDialogClosed(page);
   await waitRows(page, 20);
+
+  /* ── 3b-2b. 随机排序：打散字母序，且同一轮内稳定 ─────────── */
+  /*
+   * 两条都要钉：
+   * 1. 真的打散了 —— 首屏第一行不再是字母序第一条；
+   * 2. 同一轮内稳定 —— 翻页再翻回来、或勾一行触发重渲染，顺序不得改变。
+   *    第 2 条是这次实现的要害：用 Math.random() 当排序键时它必然失败，
+   *    而界面上只表现为「怎么又变了」，很难归因。
+   */
+  const firstPageKeys = () =>
+    page
+      .locator('[role="row"][data-key]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-key")));
+
+  /*
+   * 先把视图恢复到「默认等级 A1 + 无任何其他条件」，再只开随机。
+   *
+   * 必须是这个初始态：若带着「等级=全部」这类条件（reset 的结果就不等于
+   * 默认的 A1），按钮本来就因为「有筛选」而变样，随机标签在不在都看不出来 ——
+   * 底下的断言会被蒙混过去，而真实的纯随机场景仍然是坏的。
+   */
+  await openFilter(page);
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-level"]')
+    .getByRole("button", { name: "A1", exact: true })
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-order"]').getByRole("button").nth(0).click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+
+  const alphabeticalFirstPage = await firstPageKeys();
+  report.check(
+    "order.noBadgeWhenDefault",
+    (await page.locator('[data-testid="filter-trigger"]').innerText()).trim() === "筛选",
+    await page.locator('[data-testid="filter-trigger"]').innerText(),
+  );
+
+  // 只动「排序」，其他条件一律不碰
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-order"]').getByRole("button").nth(1).click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+
+  const shuffledFirstPage = await firstPageKeys();
+  report.check(
+    "order.randomShuffles",
+    shuffledFirstPage.length === 20 &&
+      JSON.stringify(shuffledFirstPage) !== JSON.stringify(alphabeticalFirstPage),
+    shuffledFirstPage.slice(0, 3).join(","),
+  );
+  // 乱序不增删词条：仍是 A1 这一栏
+  report.check(
+    "order.randomKeepsTotal",
+    Number(await page.locator('[data-testid="word-grid"]').getAttribute("aria-rowcount")) === 894,
+  );
+  /*
+   * 只开随机、不加任何筛选条件时，按钮也必须标出来。
+   *
+   * 这条曾经漏过：标签只在「有筛选」时拼进按钮文案，于是纯随机模式下按钮
+   * 仍印「筛选」，列表看起来像坏了。这里断言文案恰好是「随机」，
+   * 不带任何等级前缀 —— 一旦又走回 filtered 分支就会变红。
+   */
+  report.check(
+    "order.showsBadgeOnTrigger",
+    (await page.locator('[data-testid="filter-trigger"]').innerText()).trim() === "随机",
+    await page.locator('[data-testid="filter-trigger"]').innerText(),
+  );
+
+  // 翻到第 2 页再回来：顺序必须一模一样
+  await page.locator('button[aria-label="下一页"]').click();
+  await page.waitForTimeout(150);
+  await page.locator('button[aria-label="上一页"]').click();
+  await page.waitForTimeout(150);
+  report.check(
+    "order.stableAcrossPaging",
+    JSON.stringify(await firstPageKeys()) === JSON.stringify(shuffledFirstPage),
+  );
+
+  // 切到词性对照再切回来：面板换过显示状态，顺序不得改变。
+  // 移动端顶栏没有词性对照入口（那是桌面 tablist 才有的），所以直接改 hash 切路由。
+  await page.evaluate(() => {
+    location.hash = "#/guide";
+  });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => {
+    location.hash = "#/";
+  });
+  await waitRows(page, 20);
+  report.check(
+    "order.stableAcrossTabSwitch",
+    JSON.stringify(await firstPageKeys()) === JSON.stringify(shuffledFirstPage),
+  );
+
+  // 复原：清空筛选把排序也带回字母序，按钮上的「随机」标记随之消失
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+  report.check(
+    "order.resetRestoresAlphabetical",
+    JSON.stringify(await firstPageKeys()) === JSON.stringify(alphabeticalFirstPage),
+  );
+  /*
+   * 清空筛选后按钮上不能再留「随机」。
+   *
+   * 这里允许按钮因为等级被 reset 成「全部」而印「全部等级」，
+   * 所以只断言不含「随机」—— 正好和上面那条「纯随机时必须印随机」互补：
+   * 一个查漏标，一个查残留。
+   */
+  report.check(
+    "order.resetClearsShuffleBadge",
+    !(await page.locator('[data-testid="filter-trigger"]').innerText()).includes("随机"),
+    await page.locator('[data-testid="filter-trigger"]').innerText(),
+  );
 
   /* ── 3b-3. 抽屉操作条固定，不随条件列表滚出视口 ──────────── */
   await openFilter(page);

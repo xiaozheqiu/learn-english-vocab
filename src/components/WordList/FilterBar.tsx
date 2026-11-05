@@ -15,6 +15,7 @@ import {
 import type {
   InitialFilter,
   ListCriteria,
+  OrderFilter,
   OxfordFilter,
   PosFilter,
   TierFilter,
@@ -30,8 +31,14 @@ export interface FilterDraft {
   oxford: OxfordFilter;
   pos: PosFilter;
   initial: InitialFilter;
+  order: OrderFilter;
   pageSize: PageSize;
 }
+
+const ORDERS: { value: OrderFilter; label: string }[] = [
+  { value: "default", label: "字母序" },
+  { value: "random", label: "随机" },
+];
 
 export interface FilterBarProps {
   /** 已生效的等级（列表正在用的，不是抽屉里临时选的） */
@@ -41,6 +48,8 @@ export interface FilterBarProps {
   oxford: OxfordFilter;
   pos: PosFilter;
   initial: InitialFilter;
+  /** 已生效的排序方式；只在随机时于筛选按钮上标一个字，免得忘了自己在乱序里 */
+  order: OrderFilter;
   /** 偏好里的默认等级：和它一致时按钮显示「筛选」而不是一条默认条件 */
   defaultLevel: LevelFilter;
   query: string;
@@ -99,6 +108,7 @@ export function FilterBar({
   oxford,
   pos,
   initial,
+  order,
   defaultLevel,
   query,
   pageSize,
@@ -114,6 +124,7 @@ export function FilterBar({
     oxford,
     pos,
     initial,
+    order,
     pageSize,
   });
   const input = useRef<HTMLInputElement>(null);
@@ -122,7 +133,7 @@ export function FilterBar({
 
   // 每次打开都从「当前生效的条件」起稿，关上时丢弃草稿的语义才成立
   const onOpenChange = (next: boolean) => {
-    if (next) setDraft({ level, mode, tier, oxford, pos, initial, pageSize });
+    if (next) setDraft({ level, mode, tier, oxford, pos, initial, order, pageSize });
     setOpen(next);
     if (!next) window.setTimeout(() => trigger.current?.focus(), 0);
   };
@@ -166,6 +177,7 @@ export function FilterBar({
     draft.oxford !== oxford ||
     draft.pos !== pos ||
     draft.initial !== initial ||
+    draft.order !== order ||
     draft.pageSize !== pageSize;
   const draftTotal = countFor({
     level: draft.level,
@@ -181,14 +193,31 @@ export function FilterBar({
    * 按钮上按「信息密度」取舍：等级必印，掌握状态只在非全选时印，
    * 词性 / 字母各占一小格。全塞进去会被 max-w 截断成一串省略号，
    * 所以容器给到 10rem，靠 truncate 兜住极端组合（等级 + 词性 + 字母）。
+   *
+   * 「随机」也挤一格：乱序时列表看不出「这是乱序还是数据本来就长这样」，
+   * 不标出来的话，下次打开会以为词表坏了。
    */
   const extraLabels = [
     pos !== "all" ? (POS_OPTIONS.find((item) => item.value === pos)?.label ?? pos) : "",
     initial !== "all" ? `${initial.toUpperCase()} 开头` : "",
   ].filter(Boolean);
+
+  /**
+   * 按钮上要不要标东西，看的是「显示状态是否偏离默认」，而不只是「有没有筛选」。
+   *
+   * 随机会在这条上单独成立：只开随机、不加任何筛选条件时，`filtered` 是 false，
+   * 但列表已经不是字母序了。若还按 filtered 决定文案，按钮会继续印「筛选」，
+   * 用户看不出自己正处在乱序里 —— 第一版就是这么漏的。
+   */
+  const shuffled = order === "random";
+  const marked = filtered || shuffled;
   const triggerText = filtered
-    ? [levelLabel, mode !== "all" ? modeLabel : "", ...extraLabels].filter(Boolean).join(" · ")
-    : "筛选";
+    ? [levelLabel, mode !== "all" ? modeLabel : "", ...extraLabels, shuffled ? "随机" : ""]
+        .filter(Boolean)
+        .join(" · ")
+    : shuffled
+      ? "随机"
+      : "筛选";
 
   return (
     <section aria-label="词表筛选" className="border-b border-line bg-card/80">
@@ -198,14 +227,14 @@ export function FilterBar({
           data-testid="filter-trigger"
           variant="outline"
           size="sm"
-          className={cn("h-9 shrink-0 gap-1.5", filtered && "border-brand/50 text-brand-ink")}
+          className={cn("h-9 shrink-0 gap-1.5", marked && "border-brand/50 text-brand-ink")}
           onClick={() => onOpenChange(true)}
           aria-haspopup="dialog"
           aria-expanded={open}
         >
           <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
           <span className="max-w-[10rem] truncate">{triggerText}</span>
-          {filtered && (
+          {marked && (
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" aria-hidden="true" />
           )}
         </Button>
@@ -494,6 +523,43 @@ export function FilterBar({
               </div>
             </section>
 
+            {/*
+              排序：只改顺序，不改结果集，所以放在最后一组 —— 用户先想清楚
+              「要哪些词」，最后才决定「按什么顺序看」。
+              随机这一档不是一次性动作而是持续状态：选着它就一直乱序，
+              直到自己切回字母序。
+            */}
+            <section className="mt-4" aria-labelledby="filter-order-title">
+              <h3 id="filter-order-title" className="text-[13px] font-medium text-ink">
+                排序
+              </h3>
+              <div
+                data-testid="filter-order"
+                role="group"
+                aria-labelledby="filter-order-title"
+                className="mt-1.5 grid grid-cols-2 gap-1.5"
+              >
+                {ORDERS.map((item) => (
+                  <Button
+                    key={item.value}
+                    size="touch"
+                    variant={draft.order === item.value ? "subtle" : "outline"}
+                    aria-pressed={draft.order === item.value}
+                    onClick={() => setDraft((current) => ({ ...current, order: item.value }))}
+                    className={cn(
+                      "w-full",
+                      draft.order === item.value && "border-brand/40 font-medium",
+                    )}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                随机排列打散字母序，避免靠「上一行是什么」把词顺下来；每确定一次换一种排法。
+              </p>
+            </section>
+
             <section className="mt-4" aria-labelledby="filter-size-title">
               <h3 id="filter-size-title" className="text-[13px] font-medium text-ink">
                 每页条数
@@ -545,6 +611,9 @@ export function FilterBar({
                     oxford: "all",
                     pos: "all",
                     initial: "all",
+                    // 排序也回字母序：这里清的是「所有偏离默认的显示设置」，
+                    // 留着随机会让「清空筛选」之后列表依然乱着，看不出清过
+                    order: "default",
                     pageSize: current.pageSize,
                   }))
                 }

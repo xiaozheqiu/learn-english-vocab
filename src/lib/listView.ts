@@ -36,6 +36,25 @@ export interface ListCriteria {
 }
 
 export interface ListView extends ListCriteria {
+  /**
+   * 排序方式：default = 保持数据原始（字母）顺序；random = 换一种乱序。
+   *
+   * 为什么需要它：词表按字母序排，连着背 A1 前几十个词时记住的是
+   * 「a, an · about · above · across」这串流动，而不是词义本身。
+   * 打乱之后每个词都得单独回忆，位置线索不再起作用。
+   *
+   * 它**不属于** ListCriteria：排序不改变结果集，只改变顺序，所以
+   * filterWords 不读它、抽屉的条数预览也不受它影响（见 applyOrder）。
+   */
+  order: OrderFilter;
+  /**
+   * 乱序的种子。
+   *
+   * 不能在渲染时现算 `Math.random()`：那样每次重渲染都重洗一遍，
+   * 翻页、勾选、切回标签页都会看到完全不同的顺序，连「刚才那一页」都回不去。
+   * 种子随「确定」动作更新，同一轮内排序稳定。
+   */
+  seed: number;
   page: number;
 }
 
@@ -51,6 +70,10 @@ export type TierFilter = "all" | Tier;
 /** 牛津官方词表筛选值 */
 export type OxfordFilter = "all" | "ox3000" | "ox5000" | "none";
 const OXFORD_FILTERS: readonly OxfordFilter[] = ["all", "ox3000", "ox5000", "none"];
+
+/** 排序方式；只影响顺序，不影响筛选结果 */
+export type OrderFilter = "default" | "random";
+const ORDER_FILTERS: readonly OrderFilter[] = ["default", "random"];
 
 /**
  * 词性筛选暴露的大类。
@@ -189,6 +212,8 @@ export function defaultListView(level: LevelFilter): ListView {
     oxford: "all",
     pos: "all",
     initial: "all",
+    order: "default",
+    seed: 0,
     query: "",
     page: 1,
   };
@@ -216,12 +241,20 @@ export function parseListView(raw: unknown, fallbackLevel: LevelFilter): ListVie
   const initial = INITIAL_SET.has(input.initial as string)
     ? (input.initial as InitialFilter)
     : base.initial;
+  const order = ORDER_FILTERS.includes(input.order as OrderFilter)
+    ? (input.order as OrderFilter)
+    : base.order;
+  // 种子只认非负整数；坏值退回 0，排序函数会把它当成一个合法的固定洗牌
+  const seed =
+    typeof input.seed === "number" && Number.isFinite(input.seed) && input.seed >= 0
+      ? Math.floor(input.seed)
+      : base.seed;
   const query = typeof input.query === "string" ? input.query.slice(0, MAX_QUERY) : base.query;
   const page =
     typeof input.page === "number" && Number.isFinite(input.page) && input.page >= 1
       ? Math.floor(input.page)
       : base.page;
-  return { level, mode, tier, oxford, pos, initial, query, page };
+  return { level, mode, tier, oxford, pos, initial, order, seed, query, page };
 }
 
 /** 读回上次的视图；隐私模式下 localStorage 会抛，读不到就当第一次来 */
@@ -288,6 +321,47 @@ export function filterWords(
   if (criteria.mode === "todo") return source.filter((w) => !mastered.has(w.key));
   if (criteria.mode === "done") return source.filter((w) => mastered.has(w.key));
   return source;
+}
+
+/**
+ * 乱序排序。
+ *
+ * 为什么不直接 `sort(() => Math.random() - 0.5)`：那是个假随机排序（比较器
+ * 不自洽，结果取决于引擎的排序实现），更要命的是每渲染一次就重洗一遍 ——
+ * 翻页、勾一个词、切回标签页，看到的都是另一批词，连「刚才是第几页」都回不去。
+ *
+ * 这里用「key + 种子」算一个哈希当排序键，于是同一轮内顺序完全确定：
+ * 换页、勾选、切标签页都不动，只有重新点一次「确定」（换种子）才换一种排法。
+ * 它也不依赖输入数组的原有顺序，将来数据源顺序变了，同一颗种子给出的
+ * 仍是同一组词序的语义等价物。
+ */
+export function applyOrder(
+  words: readonly Word[],
+  order: OrderFilter,
+  seed: number,
+): readonly Word[] {
+  if (order !== "random") return words;
+  // 排一次数组副本，不碰入参
+  return [...words].sort((a, b) => {
+    const diff = shuffleRank(a.key, seed) - shuffleRank(b.key, seed);
+    // 哈希相同时按 key 兜底，保证结果与输入顺序无关
+    return diff !== 0 ? diff : a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+  });
+}
+
+/**
+ * `key` 在给定种子下的排序权重（0–1 的浮点）。
+ *
+ * FNV-1a 混合种子后取 32 位，再折成浮点参与比较。够散、够快，
+ * 而且不需要引入随机数库 —— 这里要的是「确定的一团乱」，不是密码学随机。
+ */
+function shuffleRank(key: string, seed: number): number {
+  let hash = (2166136261 ^ seed) >>> 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967296;
 }
 
 export interface ScopeProgressInfo {
