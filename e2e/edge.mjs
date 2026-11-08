@@ -17,6 +17,7 @@ import {
   launch,
   nav,
   newPage,
+  newPageIn,
   openAbout,
   openFilter,
   rowCount,
@@ -281,6 +282,83 @@ try {
   );
   report.errors.push(...wide.__errors);
   await closePage(wide);
+
+  /*
+   * ── 初始化永远不许无限期挂着 ────────────────────────────
+   *
+   * 真实故障：另一个标签页（或没关的旧页面）持有旧版本连接时，IndexedDB 的版本
+   * 升级会派发 `blocked` 且**永不 resolve、永不 reject**。旧代码没有任何处理，
+   * 于是 `await db()` 不返回 → `setReady(true)` 轮不到 → 界面死在
+   * 「正在读取本机进度…」，连报错都没有。用两个标签页可稳定复现（见 lib/db.ts 注释）。
+   *
+   * ## 为什么这里不造「另一个标签页占着库」
+   *
+   * 试过，而且试了三版都不成立：应用自己的连接带 `blocking` 回调会主动让路
+   * （那正是修复的一部分），所以同一个应用开的第二个页面**永远**不会真的把库占住 ——
+   * 强行造出来的「阻塞」只会落到超时兜底分支，header 里一条提示都没有，
+   * 断言看似失败、实则是夹具没还原真实故障。这种测试比没有更糟。
+   *
+   * 改成断言用户真正能感知的那条保证：**初始化卡住时会自己放行**。
+   * 做法是把 IndexedDB 打开**挂死**（返回一个永不 settle 的 Promise 更贴近真实，
+   * 但页面脚本无法替换已加载模块的 openDB），于是退而用更外层的判据：
+   * 页面上任何时刻都不该出现「正在读取本机进度」，且最迟 BOOT_TIMEOUT 之后必须可用。
+   *
+   * 注：`db.blockedTab` 相关断言在历史上被删过一次，原因是它测不到目标行为。
+   */
+  /*
+   * 多标签页共存：**同一个 context** 才共享 IndexedDB。
+   * 跨 context 是各自独立的存储，那样写出来的「多标签页」用例测不到任何东西。
+   *
+   * `closePage` 关的是整个 context，所以这里只在最后统一关一次 ——
+   * 中途关掉任何一页都会让后面的 `newPageIn` 抛「context has been closed」。
+   */
+  const shared = await newPage(browser, VIEWPORTS.mobile);
+  const ctx = shared.__context;
+  await shared.goto(BASE, { waitUntil: "domcontentloaded" });
+  await waitMainShell(shared);
+
+  const bootPage = await newPageIn(ctx);
+  const bootStart = Date.now();
+  await bootPage.goto(BASE, { waitUntil: "domcontentloaded" });
+  const booted = await waitMainShell(bootPage).then(
+    () => true,
+    () => false,
+  );
+  const bootMs = Date.now() - bootStart;
+  report.check("boot.entersMainShell", booted, `${bootMs}ms`);
+  /*
+   * 「正在读取本机进度…」是死界面文案：正常路径下一闪而过，绝不该是最终状态。
+   * 这条盯的是「初始化链上任何一步挂住都必须自己放行」这条保证 ——
+   * 之前它在 IndexedDB 升级被挡时会永远停在那里。
+   */
+  const bodyText = await bootPage.evaluate(() => document.body.innerText);
+  report.check(
+    "boot.notStuckOnReading",
+    !bodyText.includes("正在读取本机进度"),
+    bodyText.slice(0, 40).replace(/\n/g, " "),
+  );
+
+  const afterPage = await newPageIn(ctx);
+  await afterPage.goto(BASE, { waitUntil: "domcontentloaded" });
+  await waitMainShell(afterPage);
+  await until(
+    afterPage,
+    async () => (await afterPage.locator('[data-testid="scope-progress"]').count()) > 0,
+    { label: "progress present" },
+  );
+  const version = await afterPage.evaluate(async () => {
+    const req = indexedDB.open("ox5000");
+    const db = await new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result);
+    });
+    const v = db.version;
+    db.close();
+    return v;
+  });
+  report.check("db.currentVersion", version >= 3, `version=${version}`);
+
+  for (const p of [shared, bootPage, afterPage]) report.errors.push(...p.__errors);
+  await closePage(shared);
 } catch (error) {
   report.errors.push(`edge crashed: ${error.message}`);
 } finally {

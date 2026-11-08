@@ -219,6 +219,7 @@ function AppShell() {
             onOpenAbout={openAbout}
             onOpenGuide={() => navigate("guide")}
             memoryMode={store.memoryMode}
+            bootTimeout={store.bootTimeout}
             syncing={store.cloud === "syncing"}
             syncError={store.cloud === "error" ? store.cloudError : ""}
           />
@@ -255,6 +256,7 @@ function AppShell() {
           title={ROUTE_TITLES[activeRoute]}
           onOpenAbout={openAbout}
           memoryMode={store.memoryMode}
+          bootTimeout={store.bootTimeout}
           syncing={store.cloud === "syncing"}
           syncError={store.cloud === "error" ? store.cloudError : ""}
         />

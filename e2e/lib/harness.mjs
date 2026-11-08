@@ -93,6 +93,26 @@ export async function launch() {
   return chromium.launch({ executablePath: CHROMIUM });
 }
 
+/**
+ * 在一个**已有 context** 里再开一页。
+ *
+ * 多标签页用例必须共用同一个 context：IndexedDB 的版本升级阻塞是
+ * 按 storage key 算的，而每个 `browser.newContext()` 都是独立存储，
+ * 跨 context 的连接根本不会互相阻塞 —— 用它写「另一个标签页占着库」
+ * 的用例，会得到一个永远绿灯的假测试。
+ */
+export async function newPageIn(context) {
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(`console: ${m.text()}`);
+  });
+  page.__errors = errors;
+  page.__context = context;
+  return page;
+}
+
 export async function newPage(browser, viewport = VIEWPORTS.mobile) {
   const context = await browser.newContext({
     viewport,

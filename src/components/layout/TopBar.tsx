@@ -8,6 +8,14 @@ export interface TopBarProps {
   onOpenGuide?: () => void;
   memoryMode?: boolean;
   /**
+   * 启动超时：本机进度没读完就进了主界面。
+   *
+   * 「正在读取本机进度…」原本是个没有出口的界面 —— 初始化链上任何一步不返回，
+   * 用户就永远看不到东西。现在超时会直接放进主界面，但必须说明白「进度可能没读全」，
+   * 否则用户会以为自己的标记丢了。
+   */
+  bootTimeout?: boolean;
+  /**
    * 云端正在同步。
    *
    * 没有这条提示时，「登录后等十几秒」看起来就是「点了没反应」—— 用户会去
@@ -32,6 +40,7 @@ export function TopBar({
   onOpenAbout,
   onOpenGuide,
   memoryMode,
+  bootTimeout,
   syncing,
   syncError,
 }: TopBarProps) {
@@ -79,6 +88,16 @@ export function TopBar({
           <Info className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
+
+      {bootTimeout && (
+        <p
+          className="border-t border-due/25 bg-due-wash px-3 py-1.5 text-[12px] text-due"
+          role="status"
+          data-testid="top-boot-timeout"
+        >
+          本机进度读取超时，先让你进来用；关掉其它标签页后刷新可恢复
+        </p>
+      )}
 
       {memoryMode && (
         <p

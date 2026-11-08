@@ -8,7 +8,7 @@
  * 随复习/测试功能一起移除；锁屏相关的 meta 键也不再写入。
  * 隐私模式打不开 IDB 时整体降级为内存态，由上层展示「本次进度不会保存」。
  */
-import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import { openDB, type DBSchema, type IDBPDatabase, type OpenDBCallbacks } from "idb";
 import { migrateKey, remapWithBuckets } from "./masteryKey";
 import {
   DB_NAME,
@@ -130,51 +130,173 @@ function emptySnapshot(): Snapshot {
   };
 }
 
+/**
+ * 打开数据库，且**绝不允许无限期挂着**。
+ *
+ * ## 为什么必须写这一层
+ *
+ * `openDB` 在版本升级时，只要还有一个老版本连接没关（另一个标签页开着旧版、
+ * 或某个页面留着 v2 的句柄），它就会派发 `blocked` 事件并且**永不 resolve**
+ * 也永不 reject。没有处理时，`await db()` 永远不返回，于是
+ * `await loadSnapshot()` 不返回，`setReady(true)` 永远轮不到 ——
+ * 界面就停在「正在读取本机进度…」，一个连报错都没有的死界面。实测可复现：
+ * 另开一个标签页持有 v2 连接，再打开新版，页面 12 秒后仍停在那一行。
+ *
+ * ## 处理方式
+ *
+ * 1. `blocked` 一触发就记下来，并**主动关闭自己的连接**（关掉旧连接是解除阻塞的
+ *    唯一办法之一，另一条是让老标签页自己关），然后等一小会儿重试一次 ——
+ *    多数情况是旧标签页已经走了，只是 `blocked` 派发得比它关闭早。
+ * 2. 无论如何都在 `OPEN_TIMEOUT` 后放弃，降到内存态。宁可这一次不写入磁盘
+ *    （顶栏会提示「本次进度不会保存」），也不要让用户面对一个永远转圈的界面。
+ *
+ * 失败结果**不进 `connection` 缓存**：缓存住 null 会让之后每一次重试都直接失败，
+ * 而用户完全可能关掉旧标签页再刷新。
+ */
+const OPEN_TIMEOUT = 3000;
+
+/**
+ * 打开数据库，且**绝不允许无限期挂着**。
+ *
+ * ## 为什么必须写这一层
+ *
+ * `openDB` 在版本升级时，只要还有一个老版本连接没关（另一个标签页开着旧版、
+ * 或某个页面留着 v2 的句柄），它就会派发 `blocked` 事件并且**永不 resolve、
+ * 也永不 reject**。没有处理时 `await db()` 永远不返回，于是
+ * `await loadSnapshot()` 不返回、`setReady(true)` 永远轮不到 ——
+ * 界面停在「正在读取本机进度…」，一个连报错都没有的死界面。
+ *
+ * 已实测复现：另开一个标签页持有 v2 连接，再打开 v3 版页面，12 秒后仍停在那行。
+ *
+ * ## 三层处理
+ *
+ * 1. **自己让路**（`blocking`）：我们这个连接正挡着别的标签页升级时立刻关闭，
+ *    否则那边会卡 —— 只要是新版页面就都会走这条路，所以两边都不会卡。
+ * 2. **超时降级**：无论卡在什么原因上，`OPEN_TIMEOUT` 之后一律放弃并降到内存态。
+ *    宁可不写盘（顶栏会提示「本次进度不会保存」），也不要一个永远转圈的界面。
+ * 3. **失败不缓存**：打开失败的结果不进 `connection`，否则之后每次重试都直接失败 ——
+ *    而用户完全可能关掉旧标签页再刷新。
+ */
+function openWithTimeout(
+  version: number,
+  timeout = OPEN_TIMEOUT,
+): Promise<IDBPDatabase<OxfordDB> | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: IDBPDatabase<OxfordDB> | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), timeout);
+
+    const request = openDB<OxfordDB>(DB_NAME, version, {
+      upgrade(database, oldVersion) {
+        upgradeSchema(database, oldVersion);
+      },
+      blocked() {
+        /*
+         * 有老连接挡着。不能立刻失败（老标签页常常马上就关），
+         * 但也不能干等 —— 上面的计时器仍在跑，超时就走内存态。
+         * 记下这件事，让界面能说清原因而不是默默转圈。
+         */
+        blockedOnce = true;
+      },
+      blocking() {
+        // 我们在挡别人升级：让路。关掉之后对面立刻能升级完成。
+        void closeConnection();
+      },
+      terminated() {
+        // 浏览器强制回收了连接：清掉缓存，下次重新打开
+        connection = null;
+      },
+    });
+
+    request.then(finish, () => finish(null));
+  });
+}
+
+/**
+ * 上一次打开是否撞到过 `blocked`（另一个标签页挡着升级）。
+ *
+ * 只用于诊断文案：撞到时界面能说「另一个标签页占用着数据库」，
+ * 而不是让用户面对一个什么也不说的加载态。
+ */
+let blockedOnce = false;
+
+/** 读并重置阻塞标记（初始化流程用它决定要不要提示用户） */
+export function consumeBlockedFlag(): boolean {
+  const flag = blockedOnce;
+  blockedOnce = false;
+  return flag;
+}
+
+/** 关掉缓存里的连接（升级阻塞 / 连接被终止时用） */
+async function closeConnection(): Promise<void> {
+  const pending = connection;
+  connection = null;
+  if (!pending) return;
+  try {
+    const handle = await pending;
+    handle?.close();
+  } catch {
+    // 关不掉也不影响：下次会重新 open
+  }
+}
+
 async function db(): Promise<IDBPDatabase<OxfordDB> | null> {
   if (!supportsIdb()) return null;
   if (!connection) {
-    connection = openDB<OxfordDB>(DB_NAME, DB_VERSION, {
-      /**
-       * v1 → v2：删掉复习遗留的三个 store，只剩 mastery / meta。
-       * 删除是有意的（那些数据已经没有任何界面在读），用户的「已掌握」标记原样保留。
-       */
-      upgrade(database, oldVersion) {
-        if (oldVersion < 2) {
-          /*
-           * 这三个 store 已经不在 OxfordDB 的 schema 里，所以 contains / deleteObjectStore
-           * 的类型入口看不到它们 —— 这正是「要删的正是类型里已不存在的东西」。
-           * 走一次显式的未类型化入口，而不是把 schema 声明成它们的联合。
-           */
-          const raw = database as unknown as {
-            objectStoreNames: { contains(name: string): boolean };
-            deleteObjectStore(name: string): void;
-          };
-          for (const store of ["srs", "reviews", "days"]) {
-            if (raw.objectStoreNames.contains(store)) raw.deleteObjectStore(store);
-          }
-        }
-        if (!database.objectStoreNames.contains("mastery")) {
-          database.createObjectStore("mastery", { keyPath: "key" });
-        }
-        if (!database.objectStoreNames.contains("meta")) {
-          database.createObjectStore("meta");
-        }
-        /*
-         * v3：自测流水。autoIncrement 让「追加一条」不需要先读一次最大 id；
-         * `at` 上建索引是为了「按时间倒序取最近 N 条」不用把全表读出来 ——
-         * 流水会一直变长，这一条索引是它唯一的查询方式。
-         */
-        if (!database.objectStoreNames.contains("drills")) {
-          const store = database.createObjectStore("drills", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-          store.createIndex("at", "at");
-        }
-      },
-    }).catch(() => null);
+    // 注意：这里缓存的是 openWithTimeout 的 promise，它自身保证会 resolve
+    connection = openWithTimeout(DB_VERSION);
   }
   return connection;
+}
+
+/** 建表 / 升级。抽出来是为了让 openWithTimeout 保持单一职责（超时与重试） */
+function upgradeSchema(
+  database: Parameters<NonNullable<OpenDBCallbacks<OxfordDB>["upgrade"]>>[0],
+  oldVersion: number,
+): void {
+  /**
+   * v1 → v2：删掉复习遗留的三个 store，只剩 mastery / meta。
+   * 删除是有意的（那些数据已经没有任何界面在读），用户的「已掌握」标记原样保留。
+   */
+  {
+    if (oldVersion < 2) {
+      /*
+       * 这三个 store 已经不在 OxfordDB 的 schema 里，所以 contains / deleteObjectStore
+       * 的类型入口看不到它们 —— 这正是「要删的正是类型里已不存在的东西」。
+       * 走一次显式的未类型化入口，而不是把 schema 声明成它们的联合。
+       */
+      const raw = database as unknown as {
+        objectStoreNames: { contains(name: string): boolean };
+        deleteObjectStore(name: string): void;
+      };
+      for (const store of ["srs", "reviews", "days"]) {
+        if (raw.objectStoreNames.contains(store)) raw.deleteObjectStore(store);
+      }
+    }
+    if (!database.objectStoreNames.contains("mastery")) {
+      database.createObjectStore("mastery", { keyPath: "key" });
+    }
+    if (!database.objectStoreNames.contains("meta")) {
+      database.createObjectStore("meta");
+    }
+    /*
+     * v3：自测流水。autoIncrement 让「追加一条」不需要先读一次最大 id；
+     * `at` 上建索引是为了「按时间倒序取最近 N 条」不用把全表读出来 ——
+     * 流水会一直变长，这一条索引是它唯一的查询方式。
+     */
+    if (!database.objectStoreNames.contains("drills")) {
+      const store = database.createObjectStore("drills", {
+        keyPath: "id",
+        autoIncrement: true,
+      });
+      store.createIndex("at", "at");
+    }
+  }
 }
 
 /** 清掉 v1 遗留的锁屏 meta 键（删过一次就不再尝试，失败也只是留下无用键） */

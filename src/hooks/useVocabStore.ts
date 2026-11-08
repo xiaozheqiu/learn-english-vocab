@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   appendDrill,
+  consumeBlockedFlag,
   isMemoryMode,
   loadSnapshot,
   migrateLegacy,
@@ -94,6 +95,8 @@ export interface VocabStore {
   mastered: Map<string, number>;
   prefs: Prefs;
   memoryMode: boolean;
+  /** 启动超时：本机进度没读完就进了主界面 */
+  bootTimeout: boolean;
   loadError: string;
   loadingWords: boolean;
   /** rank / tier / 牛津标记补齐了没；档位与牛津筛选只在这之后才可信 */
@@ -154,6 +157,8 @@ export function useVocabStore(): VocabStore {
     keysOf(cachedConfusables()),
   );
   const [drills, setDrills] = useState<DrillRecord[]>([]);
+  /** 初始化超时了（见 BOOT_TIMEOUT）；顶栏据此提示「进度可能没读完」 */
+  const [bootTimeout, setBootTimeout] = useState(false);
   const [cloud, setCloud] = useState<CloudState>(cloudEnabled ? "signedOut" : "disabled");
   const [cloudError, setCloudError] = useState("");
 
@@ -377,6 +382,26 @@ export function useVocabStore(): VocabStore {
     };
   }, []);
 
+  /**
+   * 初始化的硬超时。
+   *
+   * 「正在读取本机进度…」这个界面没有失败出口：只要初始化链上任何一步不返回，
+   * 用户就永远看不到任何东西，也没有重试。而那条链上有好几个可能挂住的
+   * await（IndexedDB 升级被别的标签页挡住就是其中之一，已实测能挂死整页）。
+   *
+   * 所以这里兜一道底：超时就直接进主界面，数据能读多少算多少。
+   * 宁可让人先用起来，也不要一个连报错都没有的死界面。
+   */
+  const BOOT_TIMEOUT = 6000;
+  useEffect(() => {
+    if (ready) return;
+    const timer = window.setTimeout(() => {
+      setBootTimeout(true);
+      setReady(true);
+    }, BOOT_TIMEOUT);
+    return () => window.clearTimeout(timer);
+  }, [ready]);
+
   /* ── 初始化 ──────────────────────────────────────────────── */
   useEffect(() => {
     let alive = true;
@@ -421,6 +446,19 @@ export function useVocabStore(): VocabStore {
 
         const snapshot = await loadSnapshot();
         if (!alive) return;
+
+        /*
+         * 先记下「为什么可能没读到」，再放行界面。
+         *
+         * 顺序有讲究：`setReady(true)` 一执行主界面就渲染了，之后才到位的
+         * `loadError` 会让人看到一帧「正常界面」再冒出错误，也可能被
+         * BOOT_TIMEOUT 那条兜底抢先。撞到 blocked 是**这次没读到最可能的原因**，
+         * 必须在放行之前就写进状态。
+         */
+        if (consumeBlockedFlag()) {
+          setLoadError("另一个标签页正占用着本地数据库，关掉其它标签页后刷新即可恢复保存");
+          setMemoryMode(true);
+        }
 
         setMastered(snapshot.mastery);
         setPrefsState(snapshot.meta.prefs);
@@ -707,6 +745,7 @@ export function useVocabStore(): VocabStore {
       mastered,
       prefs,
       memoryMode,
+      bootTimeout,
       loadError,
       loadingWords,
       indexesReady: indexesReadyState,
@@ -731,6 +770,7 @@ export function useVocabStore(): VocabStore {
       mastered,
       prefs,
       memoryMode,
+      bootTimeout,
       loadError,
       loadingWords,
       indexesReadyState,

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_META, isMemoryMode, normalizePrefs, probeStorage } from "../db";
+import {
+  consumeBlockedFlag,
+  DEFAULT_META,
+  isMemoryMode,
+  normalizePrefs,
+  probeStorage,
+} from "../db";
 import { DB_NAME, DB_VERSION, DEFAULT_PREFS } from "../types";
 
 describe("默认值", () => {
@@ -97,5 +103,24 @@ describe("库版本", () => {
   it("v3：加 drills store 时版本号必须是 3", () => {
     expect(DB_VERSION).toBe(3);
     expect(DB_NAME).toBe("ox5000");
+  });
+});
+
+/**
+ * 升级被挡住时必须能自己走出来。
+ *
+ * 真实故障：旧标签页（或一个没关的旧版页面）持有 v2 连接时，IndexedDB 的版本升级
+ * 会派发 `blocked` 并且**永不 resolve、也永不 reject**。旧代码没有任何处理，
+ * 于是 `await db()` 永不返回 → `setReady(true)` 永远轮不到 → 界面死在
+ * 「正在读取本机进度…」。这不是理论风险：用两个标签页就能稳定复现。
+ *
+ * 单测环境没有 IndexedDB，所以这里钉不住「超时后进内存态」那条时序
+ * （由 e2e 的 busy-tab 用例覆盖）；能钉住的是「阻塞标记」这个对外契约。
+ */
+describe("数据库被占用", () => {
+  it("consumeBlockedFlag 读完即清空，不会一直报同一个原因", () => {
+    // 首次读：可能是 false（没撞到）；关键在第二次必须是 false
+    consumeBlockedFlag();
+    expect(consumeBlockedFlag()).toBe(false);
   });
 });
