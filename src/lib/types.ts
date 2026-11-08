@@ -139,8 +139,36 @@ export interface MetaState {
 }
 
 export const DB_NAME = "ox5000";
-/** v2：删掉复习遗留的 srs / reviews / days 三个 store，并清掉锁屏相关的 meta 键 */
-export const DB_VERSION = 2;
+/**
+ * v2：删掉复习遗留的 srs / reviews / days 三个 store，并清掉锁屏相关的 meta 键。
+ * v3：加 `drills` —— 自测作答流水（见 DrillRecord）。
+ */
+export const DB_VERSION = 3;
+
+/**
+ * 一次自测的流水记录（`drills` store）。
+ *
+ * ## 为什么只存汇总，不存每题对错
+ *
+ * 「这周比上周记得牢吗」只需要每次的正确率；存每题对错要先设计一套「同一个词
+ * 跨时间怎么对比」的模型，而这一版还没有用它的地方。先记能回答那个问题的最小字段，
+ * 将来真要拟合复习曲线再加 —— 那时才知道该存什么。
+ *
+ * 追加写、不更新、不删除：它是流水账，不是状态。`at` 用客户端时间即可，
+ * 这里没有多设备互相覆盖的问题（各设备各记各的，合并方式是「都留着」）。
+ */
+export interface DrillRecord {
+  /** 自增主键（IndexedDB autoIncrement） */
+  id?: number;
+  /** 结束时刻（epoch ms） */
+  at: number;
+  /** 出题范围的简短描述，如「A1」「全库」「2026-11-08 那次筛选」——只供人读 */
+  scope: string;
+  /** 题量 */
+  total: number;
+  /** 答对数 */
+  correct: number;
+}
 
 /** 旧版 localStorage 键名，保留作备份（§5 F4） */
 export const LEGACY_MASTERED_KEY = "ox5000-mastered-v1";

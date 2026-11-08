@@ -13,11 +13,14 @@ import {
   type PageSize,
 } from "@/lib/types";
 import type {
+  ConfusableFilter,
+  DisplayFilter,
   InitialFilter,
   ListCriteria,
   OrderFilter,
   OxfordFilter,
   PosFilter,
+  ReviewFilter,
   TierFilter,
 } from "@/lib/listView";
 import { INITIALS } from "@/lib/listView";
@@ -31,12 +34,16 @@ export interface FilterDraft {
   oxford: OxfordFilter;
   pos: PosFilter;
   initial: InitialFilter;
+  review: ReviewFilter;
+  confusable: ConfusableFilter;
+  display: DisplayFilter;
   order: OrderFilter;
   pageSize: PageSize;
 }
 
 const ORDERS: { value: OrderFilter; label: string }[] = [
   { value: "default", label: "字母序" },
+  { value: "freq", label: "词频" },
   { value: "random", label: "随机" },
 ];
 
@@ -48,6 +55,12 @@ export interface FilterBarProps {
   oxford: OxfordFilter;
   pos: PosFilter;
   initial: InitialFilter;
+  /** 已生效的复核档：只留标记已满 7 / 30 天的词 */
+  review: ReviewFilter;
+  /** 已生效的易混词筛选 */
+  confusable: ConfusableFilter;
+  /** 已生效的显示语言：word = 只出英文，cn = 只出中文 */
+  display: DisplayFilter;
   /** 已生效的排序方式；只在随机时于筛选按钮上标一个字，免得忘了自己在乱序里 */
   order: OrderFilter;
   /** 偏好里的默认等级：和它一致时按钮显示「筛选」而不是一条默认条件 */
@@ -108,6 +121,9 @@ export function FilterBar({
   oxford,
   pos,
   initial,
+  review,
+  confusable,
+  display,
   order,
   defaultLevel,
   query,
@@ -124,6 +140,9 @@ export function FilterBar({
     oxford,
     pos,
     initial,
+    review,
+    confusable,
+    display,
     order,
     pageSize,
   });
@@ -133,7 +152,20 @@ export function FilterBar({
 
   // 每次打开都从「当前生效的条件」起稿，关上时丢弃草稿的语义才成立
   const onOpenChange = (next: boolean) => {
-    if (next) setDraft({ level, mode, tier, oxford, pos, initial, order, pageSize });
+    if (next)
+      setDraft({
+        level,
+        mode,
+        tier,
+        oxford,
+        pos,
+        initial,
+        review,
+        confusable,
+        display,
+        order,
+        pageSize,
+      });
     setOpen(next);
     if (!next) window.setTimeout(() => trigger.current?.focus(), 0);
   };
@@ -168,7 +200,9 @@ export function FilterBar({
     tier !== "all" ||
     oxford !== "all" ||
     pos !== "all" ||
-    initial !== "all";
+    initial !== "all" ||
+    review !== "all" ||
+    confusable !== "all";
   // 草稿和已生效不同：抽屉里提示一句，免得以为已经生效了
   const pending =
     draft.level !== level ||
@@ -177,6 +211,9 @@ export function FilterBar({
     draft.oxford !== oxford ||
     draft.pos !== pos ||
     draft.initial !== initial ||
+    draft.review !== review ||
+    draft.confusable !== confusable ||
+    draft.display !== display ||
     draft.order !== order ||
     draft.pageSize !== pageSize;
   const draftTotal = countFor({
@@ -186,6 +223,8 @@ export function FilterBar({
     oxford: draft.oxford,
     pos: draft.pos,
     initial: draft.initial,
+    review: draft.review,
+    confusable: draft.confusable,
     query,
   });
 
@@ -194,8 +233,8 @@ export function FilterBar({
    * 词性 / 字母各占一小格。全塞进去会被 max-w 截断成一串省略号，
    * 所以容器给到 10rem，靠 truncate 兜住极端组合（等级 + 词性 + 字母）。
    *
-   * 「随机」也挤一格：乱序时列表看不出「这是乱序还是数据本来就长这样」，
-   * 不标出来的话，下次打开会以为词表坏了。
+   * 非默认排序（随机 / 词频）也挤一格：列表本身看不出「这是换了顺序还是数据
+   * 本来就长这样」，不标出来的话，下次打开会以为词表坏了。
    */
   const extraLabels = [
     pos !== "all" ? (POS_OPTIONS.find((item) => item.value === pos)?.label ?? pos) : "",
@@ -205,19 +244,32 @@ export function FilterBar({
   /**
    * 按钮上要不要标东西，看的是「显示状态是否偏离默认」，而不只是「有没有筛选」。
    *
-   * 随机会在这条上单独成立：只开随机、不加任何筛选条件时，`filtered` 是 false，
-   * 但列表已经不是字母序了。若还按 filtered 决定文案，按钮会继续印「筛选」，
-   * 用户看不出自己正处在乱序里 —— 第一版就是这么漏的。
+   * 非默认排序会在这条上单独成立：只开随机或词频、不加任何筛选条件时，
+   * `filtered` 是 false，但列表已经不是字母序了。若还按 filtered 决定文案，
+   * 按钮会继续印「筛选」，用户看不出自己正处在什么顺序里 —— 第一版就是这么漏的。
    */
-  const shuffled = order === "random";
-  const marked = filtered || shuffled;
+  const orderLabel = order === "random" ? "随机" : order === "freq" ? "词频" : "";
+  /*
+   * 中文态和随机一样，是「偏离默认的显示形态」而不是筛选条件，所以单独在按钮上
+   * 标一个字 —— 否则切到中文后，一屏中文释义看着像词表坏了，或者像搜索出了问题。
+   */
+  const chinese = display === "cn";
+  const reviewLabel = review === "all" ? "" : review === "d7" ? "7 天前" : "30 天前";
+  const confusableLabel = confusable === "only" ? "易混" : "";
+  const marked = filtered || Boolean(orderLabel) || chinese;
   const triggerText = filtered
-    ? [levelLabel, mode !== "all" ? modeLabel : "", ...extraLabels, shuffled ? "随机" : ""]
+    ? [
+        levelLabel,
+        mode !== "all" ? modeLabel : "",
+        ...extraLabels,
+        reviewLabel,
+        confusableLabel,
+        orderLabel,
+        chinese ? "中文" : "",
+      ]
         .filter(Boolean)
         .join(" · ")
-    : shuffled
-      ? "随机"
-      : "筛选";
+    : [orderLabel, chinese ? "中文" : ""].filter(Boolean).join(" · ") || "筛选";
 
   return (
     <section aria-label="词表筛选" className="border-b border-line bg-card/80">
@@ -285,6 +337,48 @@ export function FilterBar({
             >
               {pending ? `按当前选择会剩 ${draftTotal} 条 · 点确定生效` : `当前 ${draftTotal} 条`}
             </SheetDescription>
+
+            {/*
+              显示：只出英文 / 只出中文。
+              它不是筛选（结果集不变），所以放在最前面、单独一段，
+              和下面那些「筛掉一些词」的条件在视觉上分开。
+            */}
+            <section className="mt-4" aria-labelledby="filter-display-title">
+              <h3 id="filter-display-title" className="text-[13px] font-medium text-ink">
+                显示
+              </h3>
+              <div
+                data-testid="filter-display"
+                role="group"
+                aria-labelledby="filter-display-title"
+                className="mt-1.5 grid grid-cols-2 gap-1.5"
+              >
+                {(
+                  [
+                    { value: "word" as DisplayFilter, label: "只出英文" },
+                    { value: "cn" as DisplayFilter, label: "只出中文" },
+                  ] as const
+                ).map((item) => (
+                  <Button
+                    key={item.value}
+                    size="touch"
+                    variant={draft.display === item.value ? "subtle" : "outline"}
+                    aria-pressed={draft.display === item.value}
+                    onClick={() => setDraft((current) => ({ ...current, display: item.value }))}
+                    className={cn(
+                      "w-full",
+                      draft.display === item.value && "border-brand/40 font-medium",
+                    )}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                中文态下每行只给释义，点那一行（或按回车）当场揭晓英文 ——
+                先想再看，和「中英并排」是两回事。
+              </p>
+            </section>
 
             <section className="mt-4" aria-labelledby="filter-level-title">
               <h3 id="filter-level-title" className="text-[13px] font-medium text-ink">
@@ -524,6 +618,89 @@ export function FilterBar({
             </section>
 
             {/*
+              复核：只对「已标掌握」的词有意义，所以紧跟掌握状态之后。
+              数据来自 mastery.at（标记时间）—— 那份时间戳本来就存着，
+              此前只有云端合并读过，界面从没告诉过用户「这个词是多久前标的」。
+            */}
+            <section className="mt-4" aria-labelledby="filter-review-title">
+              <h3 id="filter-review-title" className="text-[13px] font-medium text-ink">
+                距上次标记
+              </h3>
+              <div
+                data-testid="filter-review"
+                role="group"
+                aria-labelledby="filter-review-title"
+                className="mt-1.5 grid grid-cols-3 gap-1.5"
+              >
+                {(
+                  [
+                    { value: "all" as ReviewFilter, label: "不限" },
+                    { value: "d7" as ReviewFilter, label: "7 天以上" },
+                    { value: "d30" as ReviewFilter, label: "30 天以上" },
+                  ] as const
+                ).map((item) => (
+                  <Button
+                    key={item.value}
+                    size="touch"
+                    variant={draft.review === item.value ? "subtle" : "outline"}
+                    aria-pressed={draft.review === item.value}
+                    onClick={() => setDraft((current) => ({ ...current, review: item.value }))}
+                    className={cn(
+                      "w-full",
+                      draft.review === item.value && "border-brand/40 font-medium",
+                    )}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                只看标的够久的词：「昨天背过、今天想不起来」的那批，通常就在这一档里。
+              </p>
+            </section>
+
+            {/*
+              易混词：这些词共用同一句中文，不是数据错误，是真同义词。
+              单独背哪个都记不牢 —— 认不出是哪一个。筛出来是为了成组对比。
+            */}
+            <section className="mt-4" aria-labelledby="filter-confusable-title">
+              <h3 id="filter-confusable-title" className="text-[13px] font-medium text-ink">
+                易混词
+              </h3>
+              <div
+                data-testid="filter-confusable"
+                role="group"
+                aria-labelledby="filter-confusable-title"
+                className="mt-1.5 grid grid-cols-2 gap-1.5"
+              >
+                {(
+                  [
+                    { value: "all" as ConfusableFilter, label: "全部" },
+                    { value: "only" as ConfusableFilter, label: "只出易混" },
+                  ] as const
+                ).map((item) => (
+                  <Button
+                    key={item.value}
+                    size="touch"
+                    variant={draft.confusable === item.value ? "subtle" : "outline"}
+                    aria-pressed={draft.confusable === item.value}
+                    onClick={() => setDraft((current) => ({ ...current, confusable: item.value }))}
+                    className={cn(
+                      "w-full",
+                      draft.confusable === item.value && "border-brand/40 font-medium",
+                    )}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-1 text-[12px] leading-5 text-ink-mute">
+                共 192 组 399 条词和别的词共用同一句中文（如 answer / reply / respond）。
+                把同一句中文的词排在一起对比，比一个个孤立地背更容易分清。
+              </p>
+            </section>
+
+            {/*
               排序：只改顺序，不改结果集，所以放在最后一组 —— 用户先想清楚
               「要哪些词」，最后才决定「按什么顺序看」。
               随机这一档不是一次性动作而是持续状态：选着它就一直乱序，
@@ -537,7 +714,7 @@ export function FilterBar({
                 data-testid="filter-order"
                 role="group"
                 aria-labelledby="filter-order-title"
-                className="mt-1.5 grid grid-cols-2 gap-1.5"
+                className="mt-1.5 grid grid-cols-3 gap-1.5"
               >
                 {ORDERS.map((item) => (
                   <Button
@@ -556,7 +733,9 @@ export function FilterBar({
                 ))}
               </div>
               <p className="mt-1 text-[12px] leading-5 text-ink-mute">
-                随机排列打散字母序，避免靠「上一行是什么」把词顺下来；每确定一次换一种排法。
+                词频按口语常用度从高到低排（the / be / and 在最前），配「未掌握」用才不会头几屏全是
+                already-known
+                的词。随机打散字母序，避免靠「上一行是什么」把词顺下来；每确定一次换一种排法。
               </p>
             </section>
 
@@ -611,8 +790,11 @@ export function FilterBar({
                     oxford: "all",
                     pos: "all",
                     initial: "all",
-                    // 排序也回字母序：这里清的是「所有偏离默认的显示设置」，
-                    // 留着随机会让「清空筛选」之后列表依然乱着，看不出清过
+                    review: "all",
+                    confusable: "all",
+                    // 显示语言与排序一起归位：这里清的是「所有偏离默认的显示设置」，
+                    // 留着中文或随机会让「清空筛选」之后列表依然不是默认形态，看不出清过
+                    display: "word",
                     order: "default",
                     pageSize: current.pageSize,
                   }))

@@ -13,11 +13,41 @@
  *    文案改动不该让测试变红，行为改动才应该。
  */
 
+import { existsSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { chromium } from "playwright";
 
-const CHROMIUM =
-  process.env.CHROMIUM_PATH ??
-  "/Users/zheqiu/Library/Caches/ms-playwright/chromium_headless_shell-1232/chrome-headless-shell-mac-arm64/chrome-headless-shell";
+/**
+ * 无头 chromium 的可执行文件路径。
+ *
+ * 以前这里写死了 `...chromium_headless_shell-1232/...`，`npx playwright install`
+ * 一升级到别的 build 号就整条 e2e 挂掉，报「executable doesn't exist」——
+ * 那和被测行为毫无关系，却挡住了所有断言。现在按 build 号倒序找第一个存在的，
+ * 找不到再退回 playwright 自己的解析（它会给出更清楚的安装提示）。
+ */
+export function findChromium() {
+  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
+  const cache = path.join(process.env.HOME ?? "", "Library", "Caches", "ms-playwright");
+  try {
+    const builds = readdirSync(cache)
+      .filter((name) => name.startsWith("chromium_headless_shell-"))
+      .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
+    for (const build of builds) {
+      const candidate = path.join(
+        cache,
+        build,
+        "chrome-headless-shell-mac-arm64",
+        "chrome-headless-shell",
+      );
+      if (existsSync(candidate)) return candidate;
+    }
+  } catch {
+    // 缓存目录不存在：交给下面的 undefined，playwright 自己会说要装什么
+  }
+  return undefined;
+}
+
+const CHROMIUM = findChromium();
 
 export const BASE = process.env.BASE_URL ?? "http://127.0.0.1:5173/";
 

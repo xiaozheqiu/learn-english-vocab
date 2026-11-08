@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_META, isMemoryMode, normalizePrefs, probeStorage } from "../db";
-import { DEFAULT_PREFS } from "../types";
+import { DB_NAME, DB_VERSION, DEFAULT_PREFS } from "../types";
 
 describe("默认值", () => {
   it("默认 meta 只有偏好与迁移标记", () => {
@@ -81,5 +81,21 @@ describe("存储降级判定", () => {
         value: original,
       });
     }
+  });
+});
+
+/**
+ * 自测流水用的是新 store（v3）。这里只能钉住「版本号确实抬了」——
+ * 真正的写入 / 读取要有 IndexedDB 环境，由 e2e 覆盖（drill.recordsRound）。
+ *
+ * 为什么值得单独一条：v2 → v3 的 upgrade 里建 store 的代码是幂等的，
+ * 但如果有人图省事把 DB_VERSION 留在 2，新 store 永远不会被创建，
+ * 而所有写入都会静默失败（`appendDrill` 的 catch 会吞掉）——
+ * 表现为「历史一直是空的」，极难归因。
+ */
+describe("库版本", () => {
+  it("v3：加 drills store 时版本号必须是 3", () => {
+    expect(DB_VERSION).toBe(3);
+    expect(DB_NAME).toBe("ox5000");
   });
 });

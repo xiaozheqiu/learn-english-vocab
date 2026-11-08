@@ -20,7 +20,13 @@ import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { chromium } from "playwright";
-import { createReport, waitDialogClosed, waitMainShell, VIEWPORTS } from "./lib/harness.mjs";
+import {
+  createReport,
+  findChromium,
+  waitDialogClosed,
+  waitMainShell,
+  VIEWPORTS,
+} from "./lib/harness.mjs";
 
 const BASE_PATH = "/learn-english-vocab/";
 const PORT = Number(process.env.PWA_PORT ?? 4178);
@@ -101,11 +107,8 @@ const server = createServer(async (req, res) => {
 await new Promise((done) => server.listen(PORT, "127.0.0.1", done));
 
 const report = createReport();
-const browser = await chromium.launch({
-  executablePath:
-    process.env.CHROMIUM_PATH ??
-    "/Users/zheqiu/Library/Caches/ms-playwright/chromium_headless_shell-1232/chrome-headless-shell-mac-arm64/chrome-headless-shell",
-});
+// 用与 flow / edge 同一套自动发现逻辑：build 号写死过一次，playwright 一升级就整条挂掉
+const browser = await chromium.launch({ executablePath: findChromium() });
 
 const context = await browser.newContext({
   viewport: VIEWPORTS.mobile,
@@ -218,6 +221,60 @@ try {
 
   /* ── 5. 换新版后仍然可用：词表渲染出来、掌握标记能落地 ─── */
   report.check("update.listStillWorks", (await page.locator('[role="row"][data-key]').count()) > 0);
+
+  /*
+   * ── 6. 中文模式离线可用 ─────────────────────────────────────
+   *
+   * 释义分包（zh-*.json）进 `globPatterns` 是**故意**的：装过一次之后断网
+   * 也能切到「只出中文」。这条断言盯的不是「首屏不下释义」（那由代码结构保证），
+   * 而是「SW 确实把释义一起缓存了」—— 谁哪天把 zh-* 加进 globIgnores 省那 49KB，
+   * 地铁里背单词的人会先发现，测试不该让他先发现。
+   *
+   * 判据查结构：行上有 data-display="cn"，且没有「暂无释义」占位。
+   */
+  await page
+    .waitForFunction(
+      async () => {
+        const names = await caches.keys();
+        if (!names.length) return false;
+        const cache = await caches.open(names[0]);
+        const keys = await cache.keys();
+        return keys.filter((k) => k.url.includes("/zh-")).length >= 6;
+      },
+      null,
+      { timeout: 20000 },
+    )
+    .catch(() => null);
+
+  const zhCached = await page.evaluate(async () => {
+    const names = await caches.keys();
+    if (!names.length) return 0;
+    const cache = await caches.open(names[0]);
+    const keys = await cache.keys();
+    return keys.filter((k) => k.url.includes("/zh-")).length;
+  });
+  report.check("offline.chineseChunksPrecached", zhCached >= 6, `zh entries=${zhCached}`);
+
+  await context.setOffline(true);
+  try {
+    await page.locator('[data-testid="filter-trigger"]').click({ timeout: 5000 });
+    await page
+      .waitForSelector('[data-testid="filter-display"]', { timeout: 5000 })
+      .catch(() => null);
+    await page.locator('[data-testid="filter-display"]').getByRole("button").nth(1).click();
+    await page.locator('[data-testid="filter-done"]').click();
+    await page.waitForTimeout(800);
+    const offlineRow = page.locator('[role="row"][data-key]').first();
+    const offlineDisplay = await offlineRow.getAttribute("data-display");
+    const offlineText = await offlineRow.innerText();
+    report.check(
+      "offline.chineseModeWorks",
+      offlineDisplay === "cn" && !offlineText.includes("暂无释义"),
+      `${offlineDisplay} | ${offlineText.replace(/\n/g, " ").slice(0, 40)}`,
+    );
+  } finally {
+    await context.setOffline(false);
+  }
 } finally {
   await context.close().catch(() => undefined);
   await browser.close().catch(() => undefined);

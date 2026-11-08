@@ -20,6 +20,7 @@ dev-dist/
 #    - .cache.json     忽略：抓取中间产物，5MB，每次抓取都变
 # 3. src/data/        构建输入/产物
 #    - A1..C1.json     忽略：由 data/*.js 转出，npm run data 可重建
+#    - zh-*.json       忽略：同上，释义分包（与词表同序对齐）
 #    - oxford.json     入库：源数据是牛津快照，重建依赖上面的 gz
 #    - tiers.json      入库：重建依赖 63MB 外部词典（ECDICT）
 

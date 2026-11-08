@@ -6,7 +6,9 @@ import {
   initialOf,
   parseListView,
   posTags,
+  orderNeedsIndexes,
   scopeProgress,
+  daysSinceMarked,
   type ListCriteria,
 } from "../listView";
 import { bucketLabel, isLevelFilter, type Word } from "../types";
@@ -39,6 +41,8 @@ const ALL: ListCriteria = {
   oxford: "all",
   pos: "all",
   initial: "all",
+  review: "all",
+  confusable: "all",
   query: "",
 };
 
@@ -78,6 +82,9 @@ describe("视图状态解析", () => {
       oxford: "all",
       pos: "all",
       initial: "all",
+      review: "all",
+      confusable: "all",
+      display: "word",
       order: "default",
       seed: 0,
       query: "ab",
@@ -133,11 +140,17 @@ describe("词表过滤", () => {
  * 这条用例盯住「不要把它又加回 ListCriteria」。
  */
 describe("筛选维度", () => {
-  it("等级 / 档位 / 牛津词表 / 词性 / 首字母 / 掌握状态，没有第二套难度轴", () => {
+  it("等级 / 档位 / 牛津词表 / 词性 / 首字母 / 复核 / 掌握状态，没有第二套难度轴", () => {
     const criteria = defaultListView("A1");
-    // 排序不是筛选维度：它不改变结果集，所以不在 ListCriteria 里
+    /*
+     * 视图只有这些键。`order` / `seed`（排序）与 `display`（显示语言）不在
+     * ListCriteria 里 —— 它们都不改变结果集，所以 filterWords 不读、抽屉的
+     * 条数预览也不受它们影响。改这个列表等于改「筛选维度」的定义，要有意为之。
+     */
     expect(Object.keys(criteria).sort()).toEqual(
       [
+        "confusable",
+        "display",
         "initial",
         "level",
         "mode",
@@ -146,6 +159,7 @@ describe("筛选维度", () => {
         "page",
         "pos",
         "query",
+        "review",
         "seed",
         "tier",
       ].sort(),
@@ -289,6 +303,9 @@ describe("视图状态里的新维度", () => {
       oxford: "all",
       pos: "all",
       initial: "all",
+      review: "all",
+      confusable: "all",
+      display: "word",
       order: "default",
       seed: 0,
       query: "ab",
@@ -395,5 +412,285 @@ describe("板块显示名", () => {
   it("PHRASE 是合法筛选值，不会在解析时被丢掉", () => {
     expect(isLevelFilter("PHRASE")).toBe(true);
     expect(parseListView({ level: "PHRASE" }, "A1").level).toBe("PHRASE");
+  });
+});
+
+/**
+ * 复核筛选（`review`）：只留「标了有一阵子」的词。
+ *
+ * 数据来自 `mastery` 里本来就存着的标记时间 —— 此前只有云端合并读它，
+ * 界面从没告诉过用户「这个词是多久前标的」，于是「已掌握」是个没有下文的终点。
+ */
+describe("复核筛选", () => {
+  const DAY = 86_400_000;
+
+  const WORDS_REVIEW: Word[] = [w("A1", "fresh"), w("A1", "week"), w("A1", "month")];
+  const keyOf = (word: string) => WORDS_REVIEW.find((x) => x.word === word)!.key;
+
+  /**
+   * 三个词分别标于：刚标、8 天前、40 天前。
+   *
+   * 基准用真实的 `Date.now()`：filterWords 内部就是拿它比的，
+   * 测试里固定一个历史时刻只会让断言随日历漂移。
+   */
+  function masteredWithTimes() {
+    const now = Date.now();
+    const map = new Map<string, number>([
+      [keyOf("fresh"), now - 1000],
+      [keyOf("week"), now - 8 * DAY],
+      [keyOf("month"), now - 40 * DAY],
+    ]);
+    return {
+      has: (key: string) => map.has(key),
+      get: (key: string) => map.get(key),
+    };
+  }
+
+  it("不限复核时按掌握状态原样返回", () => {
+    const rows = filterWords(WORDS_REVIEW, { ...ALL, level: "A1" }, masteredWithTimes());
+    expect(rows.map((r) => r.word)).toEqual(["fresh", "week", "month"]);
+  });
+
+  it("7 天以上：刚标的被排除，8 天与 40 天的留下", () => {
+    const rows = filterWords(
+      WORDS_REVIEW,
+      { ...ALL, level: "A1", review: "d7" },
+      masteredWithTimes(),
+    );
+    expect(rows.map((r) => r.word)).toEqual(["week", "month"]);
+  });
+
+  it("30 天以上：只剩 40 天前标的那条", () => {
+    const rows = filterWords(
+      WORDS_REVIEW,
+      { ...ALL, level: "A1", review: "d30" },
+      masteredWithTimes(),
+    );
+    expect(rows.map((r) => r.word)).toEqual(["month"]);
+  });
+
+  it("未掌握的词没有标记时间，不算到期（宁可漏报也不凭空报）", () => {
+    const empty = { has: () => false, get: () => undefined };
+    const rows = filterWords(WORDS_REVIEW, { ...ALL, level: "A1", review: "d7" }, empty);
+    expect(rows).toEqual([]);
+  });
+
+  it("只有 has、给不出时间时不算到期", () => {
+    const noTime = { has: () => true };
+    const rows = filterWords(WORDS_REVIEW, { ...ALL, level: "A1", review: "d7" }, noTime);
+    expect(rows).toEqual([]);
+  });
+
+  it("与「已掌握 / 未掌握」叠加仍然成立", () => {
+    const rows = filterWords(
+      WORDS_REVIEW,
+      { ...ALL, level: "A1", mode: "done", review: "d7" },
+      masteredWithTimes(),
+    );
+    expect(rows.map((r) => r.word)).toEqual(["week", "month"]);
+  });
+
+  it("坏值回落成「不限」，不会把整条视图作废", () => {
+    expect(parseListView({ review: "d99" }, "A1").review).toBe("all");
+    expect(parseListView({ review: "d7" }, "A1").review).toBe("d7");
+  });
+
+  it("daysSinceMarked 向下取整；没有时间给 null", () => {
+    const now = Date.UTC(2026, 10, 8, 12, 0, 0);
+    expect(daysSinceMarked(now, now)).toBe(0);
+    expect(daysSinceMarked(now - 8.9 * DAY, now)).toBe(8);
+    expect(daysSinceMarked(undefined, now)).toBe(null);
+    expect(daysSinceMarked(0, now)).toBe(null);
+  });
+});
+
+/**
+ * 词频序（`order: "freq"`）。
+ *
+ * 它读 `Word.rank`，而 rank 来自 tiers.json —— 首屏快路径不载索引时 rank 全是 0。
+ * 这组断言钉住两件事：
+ *   1. 有 rank 时按 rank 升序（不是字母序，也不是输入顺序）；
+ *   2. rank=0（索引没到）时兜底排到最后，而不是抢占最前面 ——
+ *      否则开屏那一帧会把「没算过分」的词当成最高频的词顶到第一页。
+ */
+describe("词频排序", () => {
+  function withRank(word: string, rank: number): Word {
+    return { ...w("A1", word), rank, key: `A1|${word}` };
+  }
+
+  const RANKED: Word[] = [withRank("zebra", 900), withRank("apple", 3), withRank("mango", 50)];
+
+  it("按 rank 升序，与输入顺序无关", () => {
+    const out = applyOrder(RANKED, "freq", 0).map((x) => x.word);
+    expect(out).toEqual(["apple", "mango", "zebra"]);
+    // 把输入反过来，结果不变
+    const reversed = applyOrder([...RANKED].reverse(), "freq", 0).map((x) => x.word);
+    expect(reversed).toEqual(["apple", "mango", "zebra"]);
+  });
+
+  it("rank 为 0（索引未到）的词排到最后，不当成最高频", () => {
+    const withZero: Word[] = [...RANKED, withRank("none", 0)];
+    const out = applyOrder(withZero, "freq", 0).map((x) => x.word);
+    expect(out).toEqual(["apple", "mango", "zebra", "none"]);
+  });
+
+  it("同 rank 按 key 兜底，结果稳定", () => {
+    const tied: Word[] = [withRank("bbb", 7), withRank("aaa", 7)];
+    const a = applyOrder(tied, "freq", 0).map((x) => x.word);
+    const b = applyOrder([...tied].reverse(), "freq", 0).map((x) => x.word);
+    expect(a).toEqual(b);
+    expect(a).toEqual(["aaa", "bbb"]);
+  });
+
+  it("不修改传入的数组", () => {
+    const input = [...RANKED];
+    applyOrder(input, "freq", 0);
+    expect(input.map((x) => x.word)).toEqual(["zebra", "apple", "mango"]);
+  });
+
+  it("不增删词条", () => {
+    const out = applyOrder(RANKED, "freq", 0);
+    expect(out).toHaveLength(RANKED.length);
+    expect([...out].map((x) => x.key).sort()).toEqual(RANKED.map((x) => x.key).sort());
+  });
+
+  it("orderNeedsIndexes 只对 freq 为真", () => {
+    expect(orderNeedsIndexes("freq")).toBe(true);
+    expect(orderNeedsIndexes("default")).toBe(false);
+    expect(orderNeedsIndexes("random")).toBe(false);
+  });
+
+  it("坏值回落成字母序", () => {
+    expect(parseListView({ order: "frequency" }, "A1").order).toBe("default");
+    expect(parseListView({ order: "freq" }, "A1").order).toBe("freq");
+  });
+});
+
+/**
+ * 中文搜索。
+ *
+ * 输入含汉字时按**释义**匹配，否则仍按单词匹配。分流而不是「两者都查」：
+ * 查 `a` 时若同时匹配释义，会命中几百条含「一个」的词，把单词结果淹掉。
+ */
+describe("中文搜索", () => {
+  /**
+   * 这里显式按生产规则给 key（`板块|单词`），不用上面的 `w()` ——
+   * 那个辅助函数把词性也拼进 key，而 Word.key 在生产里不含词性。
+   * 中文搜索是按 key 去查释义表的，key 对不上就一条都命中不了。
+   */
+  const real = (level: Word["level"], word: string): Word => ({
+    ...w(level, word),
+    key: `${level}|${word}`,
+  });
+  const cnWords: Word[] = [
+    real("A1", "answer"),
+    real("A2", "reply"),
+    real("A1", "apple"),
+    real("B2", "abandon"),
+  ];
+  const CN = new Map<string, string>([
+    ["A1|answer", "回答；答复"],
+    ["A2|reply", "回答；回复"],
+    ["A1|apple", "苹果"],
+    ["B2|abandon", "抛弃；遗弃"],
+  ]);
+
+  it("含汉字时按释义匹配，可一次命中多个词", () => {
+    const rows = filterWords(cnWords, { ...ALL, query: "回答" }, masteredOf([]), CN);
+    expect(rows.map((r) => r.word).sort()).toEqual(["answer", "reply"]);
+  });
+
+  it("中文搜索跨等级、不服从当前等级筛选", () => {
+    const rows = filterWords(cnWords, { ...ALL, level: "A1", query: "抛弃" }, masteredOf([]), CN);
+    expect(rows.map((r) => r.word)).toEqual(["abandon"]);
+  });
+
+  it("英文输入仍然只按单词匹配，不会因为释义里含该字母而误命中", () => {
+    // 「苹果」不含 a；但如果拿 a 去比释义，apple 的释义会被卷进来
+    const rows = filterWords(cnWords, { ...ALL, query: "abandon" }, masteredOf([]), CN);
+    expect(rows.map((r) => r.word)).toEqual(["abandon"]);
+  });
+
+  it("英文查询不该被释义干扰：搜 reply 只出 reply", () => {
+    const rows = filterWords(cnWords, { ...ALL, query: "reply" }, masteredOf([]), CN);
+    expect(rows.map((r) => r.word)).toEqual(["reply"]);
+  });
+
+  it("释义未载入时中文查询返回空集，而不是退化成不过滤", () => {
+    const rows = filterWords(cnWords, { ...ALL, query: "回答" }, masteredOf([]), new Map());
+    expect(rows).toEqual([]);
+    const rowsUndefined = filterWords(cnWords, { ...ALL, query: "回答" }, masteredOf([]));
+    expect(rowsUndefined).toEqual([]);
+  });
+
+  it("中文查询与掌握筛选叠加", () => {
+    const rows = filterWords(
+      cnWords,
+      { ...ALL, query: "回答", mode: "done" },
+      masteredOf(["A1|answer"]),
+      CN,
+    );
+    expect(rows.map((r) => r.word)).toEqual(["answer"]);
+  });
+
+  it("释义里没有匹配就真的返回空", () => {
+    expect(filterWords(cnWords, { ...ALL, query: "不存在" }, masteredOf([]), CN)).toEqual([]);
+  });
+
+  it("标点与空格不影响中文匹配（查询先 trim）", () => {
+    const rows = filterWords(cnWords, { ...ALL, query: "  回答 " }, masteredOf([]), CN);
+    expect(rows.map((r) => r.word).sort()).toEqual(["answer", "reply"]);
+  });
+});
+
+/**
+ * 易混词筛选。
+ *
+ * 判据是外部传进来的 key 集合（构建期由 confusables.json 算出），
+ * 这里不现算分组 —— 这组断言钉的是「有集合 / 没集合」两种输入的语义。
+ */
+describe("易混词筛选", () => {
+  const words: Word[] = [
+    { ...w("A1", "answer"), key: "A1|answer" },
+    { ...w("A2", "reply"), key: "A2|reply" },
+    { ...w("A1", "apple"), key: "A1|apple" },
+  ];
+  const pairs = new Set(["A1|answer", "A2|reply"]);
+
+  it("只出有同伴的词", () => {
+    const rows = filterWords(
+      words,
+      { ...ALL, confusable: "only" },
+      masteredOf([]),
+      undefined,
+      pairs,
+    );
+    expect(rows.map((r) => r.word).sort()).toEqual(["answer", "reply"]);
+  });
+
+  it("没有集合时返回空集，而不是全部命中", () => {
+    const rows = filterWords(words, { ...ALL, confusable: "only" }, masteredOf([]));
+    expect(rows).toEqual([]);
+  });
+
+  it("全部档不受影响", () => {
+    const rows = filterWords(words, ALL, masteredOf([]), undefined, pairs);
+    expect(rows).toHaveLength(3);
+  });
+
+  it("与等级筛选叠加：停在 A1 只剩 A1 里那个易混词", () => {
+    const rows = filterWords(
+      words,
+      { ...ALL, level: "A1", confusable: "only" },
+      masteredOf([]),
+      undefined,
+      pairs,
+    );
+    expect(rows.map((r) => r.word)).toEqual(["answer"]);
+  });
+
+  it("坏值回落成「全部」", () => {
+    expect(parseListView({ confusable: "yes" }, "A1").confusable).toBe("all");
+    expect(parseListView({ confusable: "only" }, "A1").confusable).toBe("only");
   });
 });

@@ -17,6 +17,7 @@ import {
   LEGACY_MASTERED_KEY,
   PAGE_SIZES,
   isLevelFilter,
+  type DrillRecord,
   type MetaState,
   type PageSize,
   type Prefs,
@@ -25,12 +26,26 @@ import {
 interface OxfordDB extends DBSchema {
   mastery: { key: string; value: { key: string; at: number } };
   meta: { key: string; value: unknown };
+  /** 自测流水：追加写，不更新 */
+  drills: {
+    key: number;
+    value: DrillRecord;
+    indexes: { at: number };
+  };
 }
 
 export interface Snapshot {
   /** key → 标记时间（epoch ms） */
   mastery: Map<string, number>;
   meta: MetaState;
+  /**
+   * 自测流水（只用于内存态降级）。
+   *
+   * 正常路径下流水在 `drills` store 里，不随快照读出来 —— 首屏没有它的读取方，
+   * 每次启动都读一遍纯属白费。这里留着只是让「隐私模式」那条降级路径
+   * 也能把本轮结果展示出来，不至于点了自测什么都没有。
+   */
+  drills: DrillRecord[];
 }
 
 export const META_KEYS = {
@@ -111,6 +126,7 @@ function emptySnapshot(): Snapshot {
   return {
     mastery: new Map(),
     meta: { ...DEFAULT_META, prefs: { ...DEFAULT_PREFS } },
+    drills: [],
   };
 }
 
@@ -142,6 +158,18 @@ async function db(): Promise<IDBPDatabase<OxfordDB> | null> {
         }
         if (!database.objectStoreNames.contains("meta")) {
           database.createObjectStore("meta");
+        }
+        /*
+         * v3：自测流水。autoIncrement 让「追加一条」不需要先读一次最大 id；
+         * `at` 上建索引是为了「按时间倒序取最近 N 条」不用把全表读出来 ——
+         * 流水会一直变长，这一条索引是它唯一的查询方式。
+         */
+        if (!database.objectStoreNames.contains("drills")) {
+          const store = database.createObjectStore("drills", {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+          store.createIndex("at", "at");
         }
       },
     }).catch(() => null);
@@ -208,6 +236,8 @@ export async function loadSnapshot(): Promise<Snapshot> {
     return {
       mastery: new Map(masteryRows.map((row) => [row.key, Number(row.at) || 0] as const)),
       meta,
+      // 首屏不读流水（没有读取方），要用的时候走 recentDrills()
+      drills: [],
     };
   } catch {
     memory ??= emptySnapshot();
@@ -269,6 +299,56 @@ function clampPageSize(value: unknown): PageSize {
 }
 
 /* ── 写入 ─────────────────────────────────────────────────────── */
+
+/* ── 自测流水 ───────────────────────────────────────────────── */
+
+/**
+ * 追加一条自测记录。
+ *
+ * 失败不抛：自测结果只用于看趋势，写不进去不该让「刚才那轮白做了」。
+ * 内存态下退化成存在内存里 —— 与其它写入同一条降级路径。
+ */
+export async function appendDrill(record: DrillRecord): Promise<void> {
+  const handle = await db();
+  if (!handle) {
+    memory ??= emptySnapshot();
+    memory.drills.push(record);
+    return;
+  }
+  try {
+    await handle.add("drills", record);
+  } catch {
+    // 写流水失败不影响本次自测结果展示
+  }
+}
+
+/**
+ * 最近 N 条自测记录，按时间倒序。
+ *
+ * 走 `at` 索引从后往前取，而不是全表 `getAll` 再排序：流水会一直变长，
+ * 而界面只要「最近几条」。
+ */
+export async function recentDrills(limit = 10): Promise<DrillRecord[]> {
+  const handle = await db();
+  if (!handle) {
+    memory ??= emptySnapshot();
+    return [...memory.drills].sort((a, b) => b.at - a.at).slice(0, limit);
+  }
+  try {
+    const tx = handle.transaction("drills", "readonly");
+    const index = tx.store.index("at");
+    const out: DrillRecord[] = [];
+    let cursor = await index.openCursor(null, "prev");
+    while (cursor && out.length < limit) {
+      out.push(cursor.value);
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+    return out;
+  } catch {
+    return [];
+  }
+}
 
 export async function saveMastery(keys: readonly string[], mastered: boolean): Promise<void> {
   if (keys.length === 0) return;

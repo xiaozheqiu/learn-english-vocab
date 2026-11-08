@@ -23,7 +23,8 @@ describe("build-data 增量转换", () => {
 
   it("强制模式下仍然会重转并给出每条记录的条数与体积", () => {
     const out = buildData({ force: true });
-    expect(out.report).toHaveLength(BUCKETS.length);
+    // 每个板块一行，外加一行「易混词」汇总（confusables.json）
+    expect(out.report).toHaveLength(BUCKETS.length + 1);
     for (const line of out.report) expect(line).toMatch(/条, .* KB/);
   });
 });

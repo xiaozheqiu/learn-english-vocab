@@ -12,7 +12,18 @@ import { bucketLabel } from "@/lib/types";
  * 分母固定是该板块的总词数，不吃搜索词、也不吃「已掌握 / 未掌握」筛选：
  * 选「已掌握」时若跟着变成 900/900，这个数字就只剩装饰作用了。
  */
-export function ScopeProgress({ progress }: { progress: ScopeProgressInfo }) {
+export function ScopeProgress({
+  progress,
+  onDrill,
+}: {
+  progress: ScopeProgressInfo;
+  /**
+   * 「自测」入口。放在这一行而不是筛选条上：这一行回答的是「这个板块我掌握到什么
+   * 程度了」，而自测正是对那个数字的一次核验 —— 「我标了 120 个，真记住了几个」。
+   * 筛选条上已经挤着筛选按钮和搜索框，再加一个按钮就没有搜索框的位置了。
+   */
+  onDrill?: () => void;
+}) {
   const label = bucketLabel(progress.scope);
   const percent = Math.round(progress.ratio * 100);
   /**
@@ -39,6 +50,17 @@ export function ScopeProgress({ progress }: { progress: ScopeProgressInfo }) {
         className="h-1 min-w-6 flex-1"
       />
       <span className="w-9 shrink-0 text-right text-ink-mute tnum">{percentLabel}</span>
+      {onDrill && (
+        <button
+          type="button"
+          data-testid="drill-entry"
+          onClick={onDrill}
+          title="从当前筛选结果里出几道中→英 的题"
+          className="-my-1 shrink-0 rounded-full border border-line bg-card px-2.5 py-1 text-[12px] font-medium text-ink-soft transition-colors hover:border-brand/50 hover:text-brand-ink"
+        >
+          自测
+        </button>
+      )}
     </div>
   );
 }

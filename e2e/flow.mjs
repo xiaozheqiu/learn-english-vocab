@@ -26,6 +26,15 @@ import {
 } from "./lib/harness.mjs";
 
 const report = createReport();
+
+/**
+ * 释义 → 单词，供自测用例从题面反查答案。
+ *
+ * 由词表自己渲染出来的行构成（见「自测」那一段），不读磁盘上的 JSON ——
+ * 读数据文件只能证明数据对，证明不了「应用自己认得出这个答案」。
+ */
+const GLOSS_TO_WORD = new Map();
+
 const browser = await launch();
 
 try {
@@ -355,7 +364,11 @@ try {
     .locator('[data-testid="filter-level"]')
     .getByRole("button", { name: "A1", exact: true })
     .click();
-  await nav.dialog(page).locator('[data-testid="filter-order"]').getByRole("button").nth(0).click();
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-order"]')
+    .getByRole("button", { name: "字母序" })
+    .click();
   await nav.dialog(page).locator('[data-testid="filter-done"]').click();
   await waitDialogClosed(page);
   await waitRows(page, 20);
@@ -369,7 +382,13 @@ try {
 
   // 只动「排序」，其他条件一律不碰
   await openFilter(page);
-  await nav.dialog(page).locator('[data-testid="filter-order"]').getByRole("button").nth(1).click();
+  // 按名字点，不按位置：排序项从「字母序/随机」涨到「字母序/词频/随机」，
+  // 位置会漂，而这条用例要测的是「随机」，不是「第几个按钮」
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-order"]')
+    .getByRole("button", { name: "随机" })
+    .click();
   await nav.dialog(page).locator('[data-testid="filter-done"]').click();
   await waitDialogClosed(page);
   await waitRows(page, 20);
@@ -561,7 +580,429 @@ try {
   await search.fill("");
   await waitRows(page, 20);
 
-  /* ── 7. 已移除的功能不得留入口 ──────────────────────────── */
+  /* ── 7. 中文模式：只给释义、点行揭晓英文 ─────────────────── */
+
+  /*
+   * 中文态不是「中英对照」，是「只给中文」。这条必须按结构查：
+   * data-display 标出这一行当前给的是哪一面，英文单词不应出现在行文本里。
+   */
+  await openFilter(page);
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-display"]')
+    .getByRole("button")
+    .nth(1)
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+
+  const cnRows = page.locator('[role="row"][data-key]');
+  report.check(
+    "cn.allRowsInChinese",
+    await cnRows.evaluateAll((rows) => rows.every((r) => r.dataset.display === "cn")),
+  );
+  // 这一屏的行里不该出现英文单词（点「看英文」之前）
+  const firstKey = await cnRows.first().getAttribute("data-key");
+  const wordOfFirst = firstKey.split("|")[1];
+  const firstText = await cnRows.first().innerText();
+  report.check(
+    "cn.hidesWord",
+    !firstText.includes(wordOfFirst),
+    `row="${firstText.replace(/\n/g, " ")}" word=${wordOfFirst}`,
+  );
+  // 释义真的到了（不是「暂无释义」占位）
+  report.check(
+    "cn.glossLoaded",
+    (await cnRows.first().textContent()).length > 1 &&
+      !(await cnRows.first().innerText()).includes("暂无释义"),
+    await cnRows.first().innerText(),
+  );
+  // 表头跟着改口，否则这一列还写着「单词」
+  report.check(
+    "cn.headerFollows",
+    (await page.locator('[role="row"]').first().innerText()).includes("中文释义"),
+  );
+
+  // 点行揭晓：仍在同一行，data-display 变 revealed，英文真的出来了
+  await cnRows.first().click();
+  report.check(
+    "cn.clickRevealsWord",
+    (await cnRows.first().getAttribute("data-display")) === "revealed",
+  );
+  report.check(
+    "cn.revealedShowsWord",
+    (await cnRows.first().innerText()).includes(wordOfFirst),
+    await cnRows.first().innerText(),
+  );
+  /*
+   * 揭晓后再点这一行，回到「选中 / 取消选中」这个原义 —— 揭晓是一次性动作，
+   * 不是把这个行变成永久摊开的开关。
+   *
+   * 点击落点必须避开行中间那个词典链接（中文态揭晓后它又出现了），
+   * 否则点下去是跳百度翻译而不是选行。点序号那一格，和用户点行内空白处等价。
+   */
+  await cnRows.first().locator("[data-row-index]").click();
+  report.check(
+    "cn.revealedRowSelectable",
+    (await cnRows.first().getAttribute("aria-selected")) === "true",
+  );
+  await cnRows.first().locator("[data-row-index]").click();
+
+  /*
+   * 揭晓状态不能活得比「这一轮中文态」更久。
+   *
+   * 切回英文再切回中文时，行的 key 与 index 都没变，memo 判定无变化不重渲染 ——
+   * 若 revealed 只放在 useState 里，答案会原样摊着，等于这个功能白做。
+   */
+  await openFilter(page);
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-display"]')
+    .getByRole("button")
+    .nth(0)
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+  await openFilter(page);
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-display"]')
+    .getByRole("button")
+    .nth(1)
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+  report.check(
+    "cn.revealResetsAcrossToggle",
+    (await cnRows.first().getAttribute("data-display")) === "cn",
+    await cnRows.first().getAttribute("data-display"),
+  );
+
+  // 中文态撤掉词典外链：留着等于把答案摆在题面上
+  await openFilter(page);
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-display"]')
+    .getByRole("button")
+    .nth(0)
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+  report.check(
+    "cn.englishModeHasLink",
+    (await page.locator('[role="row"][data-key] a').count()) > 0,
+  );
+
+  /* ── 8. 复核筛选：只留「标了有一阵子」的词 ────────────────── */
+
+  /*
+   * 这条只能靠真实数据走：先标一行「已掌握」，它一定是刚标的（0 天），
+   * 于是「7 天以上」必须把它筛掉。这不是补偿前置条件 ——
+   * 「刚标的词不该出现在到期复核里」恰恰就是要测的规则。
+   */
+  const targetRow = page.locator('[role="row"][data-key]').first();
+  const targetKey = await targetRow.getAttribute("data-key");
+  await targetRow.locator("button[aria-pressed]").click();
+  await until(
+    page,
+    async () => (await targetRow.locator('button[aria-pressed="true"]').count()) === 1,
+    { label: "row marked" },
+  );
+
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-mode"]').getByRole("button").nth(2).click();
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-review"]')
+    .getByRole("button")
+    .nth(1)
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+
+  const reviewRows = page.locator('[role="row"][data-key]');
+  const reviewCount = await reviewRows.count();
+  const keys = await reviewRows.evaluateAll((rows) => rows.map((r) => r.dataset.key));
+  report.check(
+    "review.excludesFreshlyMarked",
+    reviewCount === 0 || !keys.includes(targetKey),
+    `count=${reviewCount} target=${targetKey}`,
+  );
+
+  // 清掉：把这一行还原成未掌握，后面的用例不该继承这个状态
+  await openFilter(page);
+  await nav.dialog(page).locator('[data-testid="filter-reset"]').click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+  const restored = page.locator(`[role="row"][data-key="${targetKey}"]`);
+  if ((await restored.count()) > 0) {
+    await restored.locator('button[aria-pressed="true"]').click();
+    await until(
+      page,
+      async () =>
+        (await page
+          .locator(`[role="row"][data-key="${targetKey}"] button[aria-pressed="true"]`)
+          .count()) === 0,
+      { label: "row unmarked" },
+    );
+  }
+
+  /* ── 9. 中→英 自测：出题、判分、答错退回未掌握 ───────────── */
+
+  /*
+   * 这一条必须走真实交互：题面是哪个词的中文，只有页面自己知道。
+   * 所以按「题面 == 该词中文」反查出来再作答，而不是硬编码某个单词 ——
+   * 换一批词或换种子都不该让测试变红。
+   */
+  await page.locator('[data-testid="drill-entry"]').click();
+  await until(page, async () => (await page.locator('[data-testid="drill-start"]').count()) > 0, {
+    label: "drill sheet open",
+  });
+  report.check(
+    "drill.entryOnProgressRow",
+    (await page.locator('[data-testid="scope-progress"] [data-testid="drill-entry"]').count()) ===
+      1,
+  );
+
+  /*
+   * 「能出题几个」这一格必须能出数字，而不是永远停在加载态。
+   *
+   * 它同时是「释义到没到」的唯一可见信号：中文态的释义是懒加载的，
+   * 弱网下第一次点开自测时那份分包还在路上，若不区分「还没到」和「一个都没有」，
+   * 用户看到的是「能出题 0 个」加一个灰掉、也不说为什么的开始按钮。
+   */
+  await until(
+    page,
+    async () =>
+      (await page.locator('[data-testid="drill-pool"]').getAttribute("data-loading")) === "0",
+    { label: "glosses settled" },
+  );
+  report.check(
+    "drill.poolCountSettles",
+    /\d+ 个/.test(await page.locator('[data-testid="drill-pool"]').innerText()),
+    await page.locator('[data-testid="drill-pool"]').innerText(),
+  );
+  report.check(
+    "drill.startEnabledWithWords",
+    !(await page.locator('[data-testid="drill-start"]').isDisabled()),
+  );
+
+  // 题量选最小一档，跑完它只要几次交互
+  await nav.dialog(page).locator('[data-testid="drill-limit"]').getByRole("button").nth(0).click();
+  await nav.dialog(page).locator('[data-testid="drill-start"]').click();
+  await until(
+    page,
+    async () => (await page.locator('[data-testid="drill-question"]').count()) > 0,
+    {
+      label: "drill question",
+    },
+  );
+
+  /*
+   * 纯键盘：输入 → 回车提交 → 再回车进下一题。
+   *
+   * 判定完成后输入框若用 disabled，元素不可聚焦、焦点掉到 body，
+   * 「再按一次回车」就不成立 —— 那会逼用户每答一题都去摸鼠标。
+   */
+  await page.locator("#drill-input").fill("keyboard-path");
+  await page.locator("#drill-input").press("Enter");
+  await until(page, async () => (await page.locator('[data-testid="drill-verdict"]').count()) > 0, {
+    label: "enter submits",
+  });
+  const keyBeforeNext = await page
+    .locator('[data-testid="drill-question"]')
+    .getAttribute("data-key");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(200);
+  const keyAfterNext = await page
+    .locator('[data-testid="drill-question"]')
+    .getAttribute("data-key")
+    .catch(() => null);
+  report.check(
+    "drill.enterAdvancesWithoutMouse",
+    keyAfterNext !== null && keyAfterNext !== keyBeforeNext,
+    `before=${keyBeforeNext} after=${keyAfterNext}`,
+  );
+
+  const qText = (await page.locator('[data-testid="drill-question"] p').innerText()).trim();
+  const qKey = await page.locator('[data-testid="drill-question"]').getAttribute("data-key");
+  report.check("drill.promptIsChinese", /[\u4e00-\u9fa5]/.test(qText), qText);
+
+  // 答错：判定要出来，并且告诉正确答案
+  await page.locator("#drill-input").fill("definitely-not-the-word");
+  await nav.dialog(page).locator('[data-testid="drill-submit"]').click();
+  await until(page, async () => (await page.locator('[data-testid="drill-verdict"]').count()) > 0, {
+    label: "drill verdict",
+  });
+  report.check(
+    "drill.wrongIsMarkedWrong",
+    (await page.locator('[data-testid="drill-verdict"]').getAttribute("data-correct")) === "0",
+  );
+  const revealText = await page.locator('[data-testid="drill-verdict"]').innerText();
+  const answerWord = qKey.split("|")[1];
+  report.check(
+    "drill.revealsAnswer",
+    revealText.includes(answerWord),
+    revealText.replace(/\n/g, " "),
+  );
+
+  // 剩下的题一路「答错」跑完，最后必须有结果页
+  for (let i = 0; i < 12; i += 1) {
+    if ((await page.locator('[data-testid="drill-result"]').count()) > 0) break;
+    await page.keyboard.press("Enter"); // 判完那题之后，回车就是「下一题」
+    await page.waitForTimeout(120);
+    if ((await page.locator('[data-testid="drill-result"]').count()) > 0) break;
+    if ((await page.locator('[data-testid="drill-question"]').count()) > 0) {
+      await page.locator("#drill-input").fill("definitely-not-the-word");
+      await nav.dialog(page).locator('[data-testid="drill-submit"]').click();
+      await page.waitForTimeout(120);
+    }
+  }
+  report.check(
+    "drill.reachesResult",
+    (await page.locator('[data-testid="drill-result"]').count()) === 1,
+  );
+  const listed = await page
+    .locator("[data-wrong-key]")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-wrong-key")));
+  report.check("drill.listsWrongWords", listed.includes(qKey), `listed=${listed.length}`);
+
+  /*
+   * 答错的词退回未掌握。
+   *
+   * 不能指望它还在当前这一页：那条题是从整个筛选结果里抽的，翻到第几页全看种子。
+   * 所以用搜索把它单独调出来再查按下态 —— 搜索跨等级，一定找得到这个词。
+   */
+  await page.getByRole("button", { name: "回到词表" }).click();
+  await waitDialogClosed(page);
+  const searchForWrong = page.locator("#word-search");
+  await searchForWrong.fill(answerWord);
+  await until(
+    page,
+    async () => (await page.locator(`[role="row"][data-key="${qKey}"]`).count()) === 1,
+    { label: "search wrong word" },
+  );
+  const wrongRow = page.locator(`[role="row"][data-key="${qKey}"]`);
+  report.check(
+    "drill.wrongBecomesTodo",
+    (await wrongRow.locator('button[aria-pressed="true"]').count()) === 0,
+  );
+  await searchForWrong.fill("");
+  await waitRows(page, 20);
+
+  /* ── 9.5 作答流水：第二轮能看到「上一次」并落库 ──────────── */
+
+  /*
+   * 这一条必须走「跑完两轮」：一轮只能证明结果页出来了，证明不了流水被写下去。
+   * 判据是 `data-testid="drill-trend"` 的 `data-prev` —— 它报的是**上一条记录**的
+   * 答对数，等于同时验证了「写进去了」和「读回来的是对的那条」。
+   */
+  const playRound = async (correctEveryOther) => {
+    for (let i = 0; i < 14; i += 1) {
+      if ((await page.locator('[data-testid="drill-result"]').count()) > 0) break;
+      if ((await page.locator('[data-testid="drill-question"]').count()) === 0) {
+        await page.waitForTimeout(120);
+        continue;
+      }
+      const prompt = (await page.locator('[data-testid="drill-question"] p').innerText()).trim();
+      // 交替对错，保证正确数既不是 0 也不是满分（0 会被当成「没作答」的边界）
+      const giveCorrect = correctEveryOther && i % 2 === 0;
+      await page.locator("#drill-input").fill(giveCorrect ? guessFromGloss(prompt) : "zzz-wrong");
+      await page.locator("#drill-input").press("Enter");
+      await page.waitForTimeout(90);
+      if ((await page.locator('[data-testid="drill-verdict"]').count()) > 0) {
+        await page.keyboard.press("Enter");
+      }
+      await page.waitForTimeout(90);
+    }
+    await page.waitForSelector('[data-testid="drill-result"]', { timeout: 10000 });
+  };
+
+  /**
+   * 从释义反查英文。数据从页面已经渲染出来的行上取 —— 不读磁盘上的 JSON，
+   * 那样测的就不是应用自己认不认得出答案了。
+   */
+  const guessFromGloss = (prompt) => {
+    const hit = GLOSS_TO_WORD.get(prompt);
+    return hit ?? "zzz-wrong";
+  };
+
+  await page.locator('[data-testid="drill-entry"]').click();
+  await until(page, async () => (await page.locator('[data-testid="drill-start"]').count()) > 0, {
+    label: "drill sheet for history",
+  });
+  // 先把「只出中文」打开，让释义渲染出来，好建 释义→单词 的对照
+  await page.keyboard.press("Escape");
+  await waitDialogClosed(page);
+  await openFilter(page);
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-display"]')
+    .getByRole("button")
+    .nth(1)
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+  GLOSS_TO_WORD.clear();
+  for (const row of await page.locator('[role="row"][data-key]').all()) {
+    const text = await row.innerText();
+    const key = await row.getAttribute("data-key");
+    const gloss = text.split("\n").find((line) => /[\u4e00-\u9fa5]/.test(line) && line.trim());
+    if (gloss) GLOSS_TO_WORD.set(gloss.trim(), key.split("|")[1]);
+  }
+  // 回到英文态：中文态下没有词典链接，自测仍可用，但保持默认更接近真实路径
+  await openFilter(page);
+  await nav
+    .dialog(page)
+    .locator('[data-testid="filter-display"]')
+    .getByRole("button")
+    .nth(0)
+    .click();
+  await nav.dialog(page).locator('[data-testid="filter-done"]').click();
+  await waitDialogClosed(page);
+  await waitRows(page, 20);
+
+  await page.locator('[data-testid="drill-entry"]').click();
+  await until(page, async () => (await page.locator('[data-testid="drill-start"]').count()) > 0, {
+    label: "drill sheet reopen",
+  });
+  await nav.dialog(page).locator('[data-testid="drill-limit"]').getByRole("button").nth(0).click();
+  await nav.dialog(page).locator('[data-testid="drill-start"]').click();
+  await page.waitForSelector('[data-testid="drill-question"]');
+  await playRound(true);
+  /*
+   * 别断言「首轮没有 trend」—— 那依赖「库里一条记录都没有」，而前面已经有一条
+   * 自测用例写过记录了，换个测试顺序就会变红。真正要钉的是「这一轮被记下来了」：
+   * 结果页的历史条数在这一轮之后必须 ≥1，而下一轮之后必须比它多。
+   */
+  const historyAfterFirst = await page.locator('[data-testid="drill-result"] details li').count();
+  report.check("drill.roundPersisted", historyAfterFirst >= 1, `rows=${historyAfterFirst}`);
+
+  await page.locator('[data-testid="drill-restart"]').click();
+  await page.waitForTimeout(600);
+  await page.waitForSelector('[data-testid="drill-question"]');
+  await playRound(false);
+  const prev = await page
+    .locator('[data-testid="drill-trend"]')
+    .getAttribute("data-prev")
+    .catch(() => null);
+  report.check("drill.recordsRound", prev !== null && Number(prev) >= 0, `prev=${prev}`);
+  const historyRows = await page.locator('[data-testid="drill-result"] details li').count();
+  report.check(
+    "drill.historyGrowsPerRound",
+    historyRows > historyAfterFirst,
+    `${historyAfterFirst} → ${historyRows}`,
+  );
+  await page.getByRole("button", { name: "回到词表" }).click();
+  await waitDialogClosed(page);
+
+  /* ── 10. 已移除的功能不得留入口 ──────────────────────────── */
   report.check("gone.noReviewTab", (await page.getByRole("tab", { name: "复习" }).count()) === 0);
   report.check("gone.noQuizTab", (await page.getByRole("tab", { name: "练习" }).count()) === 0);
   report.check(

@@ -6,16 +6,29 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  appendDrill,
   isMemoryMode,
   loadSnapshot,
   migrateLegacy,
   migrateMasteryKeys,
   pendingMigrations,
   probeStorage,
+  recentDrills,
   saveMastery,
   savePrefs as dbSavePrefs,
 } from "@/lib/db";
-import { cachedAll, enrichAll, indexesReady, isLoaded, loadAll, loadLevel } from "@/lib/words";
+import {
+  cachedAll,
+  cachedConfusables,
+  cachedGlosses,
+  ensureConfusablesLoaded,
+  enrichAll,
+  indexesReady,
+  isLoaded,
+  loadAll,
+  loadGlosses,
+  loadLevel,
+} from "@/lib/words";
 import { buildBucketMapFromWords } from "@/lib/masteryKey";
 import { LIST_VIEW_KEY } from "@/lib/listView";
 import {
@@ -28,9 +41,11 @@ import {
 } from "@/lib/cloud";
 import { clearPending, enqueuePending, readPending } from "@/lib/pendingPush";
 import {
+  BUCKETS,
   DEFAULT_PREFS,
   LEGACY_MASTERED_KEY,
   LEVELS,
+  type DrillRecord,
   type Bucket,
   type LevelFilter,
   type Prefs,
@@ -43,6 +58,7 @@ import {
  * 首屏默认走不解索引的快路径，那时 rank / tier / oxford 全是默认值。档位与牛津
  * 两档恰好只读这两个索引 —— 若用户上次停在 `tier=extended` 或 `oxford=none`，
  * 快路径会先画出一份错的结果（extended 一条都没有、none 变成全库）。
+ * 排序也一样：`order=freq` 读的也是 rank，索引没到就是一堆 rank=0、顺序等于原始顺序。
  * 所以开屏前先问一句：上次的视图要索引吗？要，就老老实实等索引，慢一点但结果对。
  *
  * 读不出来（无 localStorage / 坏 JSON）按「要索引」处理：宁可慢，不可错。
@@ -51,8 +67,10 @@ function firstPaintNeedsIndexes(): boolean {
   try {
     const raw = window.localStorage.getItem(LIST_VIEW_KEY);
     if (!raw) return false;
-    const view = JSON.parse(raw) as { tier?: unknown; oxford?: unknown };
-    return (view.tier ?? "all") !== "all" || (view.oxford ?? "all") !== "all";
+    const view = JSON.parse(raw) as { tier?: unknown; oxford?: unknown; order?: unknown };
+    return (
+      (view.tier ?? "all") !== "all" || (view.oxford ?? "all") !== "all" || view.order === "freq"
+    );
   } catch {
     return true;
   }
@@ -80,11 +98,35 @@ export interface VocabStore {
   loadingWords: boolean;
   /** rank / tier / 牛津标记补齐了没；档位与牛津筛选只在这之后才可信 */
   indexesReady: boolean;
+  /**
+   * key → 中文释义。只有中文模式会去载入；没载入时是空 Map。
+   *
+   * 不放进 `Word`：释义不参与任何筛选，塞进词条会让 filterWords 的入参、
+   * 全部测试夹具、以及 applyOrder 的语义都跟着变一次，而它只是「怎么显示」。
+   */
+  glosses: Map<string, string>;
   /** 云端同步状态；未配置环境变量时恒为 disabled */
   cloud: CloudState;
 
   ensureLevels: (target: LevelFilter) => Promise<void>;
   ensureIndexes: () => Promise<void>;
+  /** 载入指定板块的中文释义（幂等；已载入则直接返回） */
+  ensureGlosses: (target: LevelFilter) => Promise<void>;
+  /** 载入易混词分组（幂等；只在「只出易混词」被选中时调用） */
+  ensureConfusables: () => Promise<void>;
+  /**
+   * 「有同伴」的 key 集合（易混词组里的词）。没载入时为空集合。
+   *
+   * 存成 Set 而不是分组 Map：筛选只需要判断「这个 key 有没有同伴」，
+   * 成组展示由数据文件本身提供，不必在这里再摆一份分组结构。
+   */
+  confusables: ReadonlySet<string>;
+  /** 最近若干条自测记录（按时间倒序）；没读过就是空数组 */
+  drills: DrillRecord[];
+  /** 追加一条自测记录，并把 `drills` 刷新成最新 */
+  saveDrill: (record: Omit<DrillRecord, "id">) => Promise<void>;
+  /** 读最近若干条记录（打开结果页前调一次） */
+  loadDrills: () => Promise<void>;
   toggleMastery: (keys: readonly string[], mastered: boolean) => Promise<void>;
   setPrefs: (patch: Partial<Prefs>) => Promise<void>;
   /** 手动再对齐一次（关于页的按钮）；登录态变化后也用它 */
@@ -102,6 +144,16 @@ export function useVocabStore(): VocabStore {
   const [loadError, setLoadError] = useState("");
   const [loadingWords, setLoadingWords] = useState(true);
   const [indexesReadyState, setIndexesReadyState] = useState(indexesReady);
+  /**
+   * 中文释义。初值从模块缓存同步读：常驻面板重新挂载（切回词表页）时，
+   * 已经载过的释义不该再闪一次空白。
+   */
+  const [glosses, setGlosses] = useState<Map<string, string>>(cachedGlosses);
+  /** 见 VocabStore.confusables：初值从模块缓存同步读，避免重新挂载时闪一帧空 */
+  const [confusables, setConfusables] = useState<ReadonlySet<string>>(() =>
+    keysOf(cachedConfusables()),
+  );
+  const [drills, setDrills] = useState<DrillRecord[]>([]);
   const [cloud, setCloud] = useState<CloudState>(cloudEnabled ? "signedOut" : "disabled");
   const [cloudError, setCloudError] = useState("");
 
@@ -526,6 +578,60 @@ export function useVocabStore(): VocabStore {
     setIndexesReadyState(true);
   }, []);
 
+  /**
+   * 载入中文释义（幂等）。
+   *
+   * 只有切到中文模式才值得付这份下载：一个板块 7~13KB gzip，全库五个加起来
+   * 约 49KB。载完之后换一次 Map 引用通知渲染；已经有的板块会被 loadGlosses
+   * 的模块级缓存挡住，重复调用不再发请求。
+   */
+  /**
+   * 载入易混词分组（幂等）。
+   *
+   * 与释义一样按需：只有「只出易混词」这一档被选中时才载入那 7.1KB。
+   */
+  /**
+   * 自测流水：只在自测相关动作里读 / 写，不参与首屏。
+   *
+   * 首屏读一遍流水的收益是零（没有它的读取方），代价是一次 IDB 事务 ——
+   * 所以这里坚持「用到才读」。
+   */
+  const loadDrills = useCallback(async () => {
+    setDrills(await recentDrills(10));
+  }, []);
+
+  const saveDrill = useCallback(async (record: Omit<DrillRecord, "id">) => {
+    await appendDrill(record);
+    // 写完立刻重读，界面看到的就是存储里真实的那份，而不是本地拼的
+    setDrills(await recentDrills(10));
+  }, []);
+
+  const ensureConfusables = useCallback(async () => {
+    const map = await ensureConfusablesLoaded();
+    setConfusables(keysOf(map));
+  }, []);
+
+  const ensureGlosses = useCallback(async (target: LevelFilter) => {
+    const buckets: Bucket[] = target === "ALL" ? [...BUCKETS] : [target];
+    /*
+     * 已载入的板块直接跳过，别为了「幂等」每次都拼一遍 Map。
+     * 判据用模块缓存而不是 state：state 更新是异步的，连续两次调用会都看到旧的。
+     */
+    const loaded = cachedGlosses();
+    let merged = loaded;
+    let changed = false;
+    for (const bucket of buckets) {
+      const map = await loadGlosses(bucket);
+      for (const [key, gloss] of map) {
+        if (merged.get(key) === gloss) continue;
+        if (merged === loaded) merged = new Map(loaded);
+        merged.set(key, gloss);
+        changed = true;
+      }
+    }
+    if (changed) setGlosses(merged);
+  }, []);
+
   /* ── 写入 ────────────────────────────────────────────────── */
 
   const toggleMastery = useCallback(async (keys: readonly string[], value: boolean) => {
@@ -604,8 +710,15 @@ export function useVocabStore(): VocabStore {
       loadError,
       loadingWords,
       indexesReady: indexesReadyState,
+      glosses,
+      confusables,
+      drills,
+      saveDrill,
+      loadDrills,
       ensureLevels,
       ensureIndexes,
+      ensureGlosses,
+      ensureConfusables,
       toggleMastery,
       setPrefs,
       cloud,
@@ -621,8 +734,15 @@ export function useVocabStore(): VocabStore {
       loadError,
       loadingWords,
       indexesReadyState,
+      glosses,
+      confusables,
+      drills,
+      saveDrill,
+      loadDrills,
       ensureLevels,
       ensureIndexes,
+      ensureGlosses,
+      ensureConfusables,
       toggleMastery,
       setPrefs,
       cloud,
@@ -630,6 +750,13 @@ export function useVocabStore(): VocabStore {
       runCloudSync,
     ],
   );
+}
+
+/** 分组 Map → 扁平 key 集合（筛选只关心「有没有同伴」） */
+function keysOf(groups: ReadonlyMap<string, readonly string[]>): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const list of groups.values()) for (const key of list) keys.add(key);
+  return keys;
 }
 
 /** 内容相同则返回原数组，保证 setState 不产生新引用（否则依赖 words 的 effect 会自激） */

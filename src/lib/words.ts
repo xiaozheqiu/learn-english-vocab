@@ -232,6 +232,95 @@ export function cachedAll(): Word[] {
   return BUCKETS.flatMap((level) => cache.get(level) ?? []);
 }
 
+/**
+ * 释义缓存：`key → 中文释义`。
+ *
+ * 释义单独成包（`zh-*.json`），与词表同序一一对应，靠下标对齐。为什么不并回
+ * 主产物：并回去是 21.7KB → 73.6KB gzip，每个只用英文的人凭空多付 52KB，
+ * 而中文模式只是其中一种看法。分开之后，只有真的切到中文模式才下载。
+ *
+ * 为什么是 Map 而不是给 `Word` 加回 `cn` 字段：`Word` 是词表筛选的输入，
+ * 每加一个字段都要在 filterWords / applyOrder / 一堆测试里跟着走一遍，
+ * 而释义不参与任何筛选。传一个并行的 Map，行组件按 key 取，边界最清楚。
+ */
+const glossCache = new Map<Bucket, Map<string, string>>();
+
+/**
+ * 载入某个板块的释义。
+ *
+ * 依赖 `loadLevel(level, false)`：两边都源自同一份 `data/*.js`，顺序天然一致。
+ * 万一长度对不上（比如产物是旧的、词表是新的），**返回空 Map 而不是错位填充** ——
+ * 少显示释义只是难看，错位却是把 A 的答案挂到 B 上，那才是背错的开始。
+ */
+export async function loadGlosses(level: Bucket): Promise<Map<string, string>> {
+  const hit = glossCache.get(level);
+  if (hit) return hit;
+
+  const words = await loadLevel(level, false);
+  const map = new Map<string, string>();
+  try {
+    const mod = (await import(`../data/zh-${level}.json`)) as { default: readonly string[] };
+    const glosses = mod.default ?? [];
+    if (glosses.length !== words.length) return new Map();
+    words.forEach((word, index) => {
+      const gloss = glosses[index];
+      if (gloss) map.set(word.key, gloss);
+    });
+  } catch {
+    // 释义是增强信息，拿不到就当没有：绝不因此把词表挡在启动页
+    return new Map();
+  }
+  glossCache.set(level, map);
+  return map;
+}
+
+/**
+ * 易混词分组：`释义 → 该释义下的全部 key`。
+ *
+ * 由 `scripts/build-data.mjs` 在构建期算好（192 组 / 399 条），运行期只是读。
+ * **只在这个功能真的被打开时才载入**（7.1KB）：不在模块顶层自动发起请求 ——
+ * 那会让每个首屏都为一个多数人不会用的筛选付流量，等于白做「按需加载」。
+ * 与 tiers / oxford 一样，拿不到就降级成空 Map，词表照常用。
+ */
+let confusablesPromise: Promise<Map<string, string[]>> | null = null;
+
+export function loadConfusables(): Promise<Map<string, string[]>> {
+  if (!confusablesPromise) {
+    confusablesPromise = (async () => {
+      try {
+        const mod = (await import("../data/confusables.json")) as {
+          default: Record<string, string[]>;
+        };
+        return new Map(Object.entries(mod.default ?? {}));
+      } catch {
+        // 拿不到就没有易混词这一档
+        return new Map<string, string[]>();
+      }
+    })();
+  }
+  return confusablesPromise;
+}
+
+/** 已经拿到手的分组（同步读取）；没载入过就是空 Map */
+export function cachedConfusables(): Map<string, string[]> {
+  return confusablesLoaded ?? new Map<string, string[]>();
+}
+
+/** loadConfusables 成功后的那份结果，供同步读取 */
+let confusablesLoaded: Map<string, string[]> | null = null;
+
+/** 载入并记住，返回同一份引用（幂等） */
+export async function ensureConfusablesLoaded(): Promise<Map<string, string[]>> {
+  if (confusablesLoaded) return confusablesLoaded;
+  confusablesLoaded = await loadConfusables();
+  return confusablesLoaded;
+}
+
+/** 已载入的释义合在一起（同步读取，供渲染时按 key 取） */
+export function cachedGlosses(): Map<string, string> {
+  return new Map([...glossCache.values()].flatMap((map) => [...map]));
+}
+
 /** 五个词汇等级（不含短语栏）—— 首屏快路径与「全部等级是否到齐」只认这个 */
 export function isLoaded(levels: readonly Bucket[]): boolean {
   return levels.every((level) => cache.has(level));

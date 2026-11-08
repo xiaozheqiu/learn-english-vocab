@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ListFilter } from "lucide-react";
 import { BulkSheet } from "./BulkSheet";
+import { DrillSheet } from "./DrillSheet";
 import { FilterBar, type FilterDraft } from "./FilterBar";
 import { Pager } from "./Pager";
 import { ScopeProgress } from "./ScopeProgress";
@@ -12,11 +13,13 @@ import {
   filterWords,
   loadListView,
   saveListView,
+  orderNeedsIndexes,
   scopeProgress,
   type InitialFilter,
   type ListCriteria,
   type ListView,
   type PosFilter,
+  type ReviewFilter,
 } from "@/lib/listView";
 import { useSelection } from "@/hooks/useSelection";
 import { usePageActive } from "@/hooks/usePageActive";
@@ -57,6 +60,15 @@ export function WordListPage({ store }: WordListPageProps) {
    */
   const [view, setView] = useState<ListView>(() => loadListView(store.prefs.defaultLevel));
   const [pageSize, setPageSize] = useState<PageSize>(store.prefs.pageSize);
+  const [drillOpen, setDrillOpen] = useState(false);
+  /**
+   * 自测的释义还在路上。
+   *
+   * 没有这个标记，抽屉在读不到释义时会算出「能出题 0 个」并把「开始」置灰 ——
+   * 而真实情况只是分包还没下载完（弱网下几百毫秒）。把「还没到」和「一个都没有」
+   * 分开报，是这一格唯一要表达的事。
+   */
+  const [drillLoading, setDrillLoading] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => saveListView(view), [view]);
@@ -86,16 +98,56 @@ export function WordListPage({ store }: WordListPageProps) {
   }, [ensureLevels, searching, view.level]);
 
   /**
-   * 视图带档位 / 牛津条件时，索引必须补齐后才算数。
+   * 视图带档位 / 牛津条件、或按词频排序时，索引必须补齐后才算数。
    *
    * 这是持久化视图的兜底：用户上次停在「认脸档」，刷新时首屏快路径给的
-   * tier 全是默认 core，不等索引就会先闪一屏「0 条」。
+   * tier 全是默认 core，不等索引就会先闪一屏「0 条」；按词频排序同理，
+   * 索引没到时 rank 全是 0，顺序会退化成字母序 —— 而按钮上还写着「词频」。
    */
+  const viewNeedsIndexesEarly =
+    view.tier !== "all" || view.oxford !== "all" || orderNeedsIndexes(view.order);
   const { ensureIndexes } = store;
   useEffect(() => {
-    if (view.tier === "all" && view.oxford === "all") return;
+    if (!viewNeedsIndexesEarly) return;
     void ensureIndexes();
-  }, [ensureIndexes, view.tier, view.oxford]);
+  }, [ensureIndexes, viewNeedsIndexesEarly]);
+
+  /**
+   * 什么时候需要释义分包。
+   *
+   * 两个入口，共用同一个 `ensureGlosses`（一次载入，两处受益，不另开加载路径）：
+   *   - **中文显示**：只载当前这一屏的板块 —— 停在 A1 的人不该为 B2/C1 付那 25KB；
+   *     但搜索跨等级，所以搜索时走 ALL。
+   *   - **中文搜索**：`filterWords` 是拿释义去比的，一定要有；搜索本来就跨等级，
+   *     所以直接走 ALL。
+   *
+   * `ensureGlosses` 从 store 里单独取出来（它本身是 useCallback，引用稳定），
+   * 依赖写它而不是整个 store —— 整个 store 每渲染都是新对象，这条 effect 会自激。
+   */
+  const { ensureGlosses } = store;
+  const chineseMode = view.display === "cn";
+  const searchingChinese = /[\u4e00-\u9fa5]/.test(view.query);
+  const glossScope: LevelFilter | null = searchingChinese
+    ? "ALL"
+    : chineseMode
+      ? searching
+        ? "ALL"
+        : view.level
+      : null;
+  useEffect(() => {
+    if (glossScope === null) return;
+    void ensureGlosses(glossScope);
+  }, [ensureGlosses, glossScope]);
+
+  /**
+   * 「只出易混词」需要那份分组（7.1KB）。与释义一样按需载入，
+   * 没选这一档就一个字节都不下。
+   */
+  const { ensureConfusables } = store;
+  useEffect(() => {
+    if (view.confusable !== "only") return;
+    void ensureConfusables();
+  }, [ensureConfusables, view.confusable]);
 
   /**
    * 筛选 + 排序。
@@ -107,8 +159,13 @@ export function WordListPage({ store }: WordListPageProps) {
    * 只有重新点一次「确定」换种子才重排。
    */
   const filtered = useMemo(
-    () => applyOrder(filterWords(store.words, view, store.mastered), view.order, view.seed),
-    [store.mastered, store.words, view],
+    () =>
+      applyOrder(
+        filterWords(store.words, view, store.mastered, store.glosses, store.confusables),
+        view.order,
+        view.seed,
+      ),
+    [store.confusables, store.glosses, store.mastered, store.words, view],
   );
 
   /**
@@ -116,8 +173,9 @@ export function WordListPage({ store }: WordListPageProps) {
    * 只读 words / mastered，所以搜索框每敲一个字不会连带重算一遍筛选结果。
    */
   const countFor = useCallback(
-    (criteria: ListCriteria) => filterWords(store.words, criteria, store.mastered).length,
-    [store.mastered, store.words],
+    (criteria: ListCriteria) =>
+      filterWords(store.words, criteria, store.mastered, store.glosses, store.confusables).length,
+    [store.confusables, store.glosses, store.mastered, store.words],
   );
 
   /**
@@ -136,6 +194,26 @@ export function WordListPage({ store }: WordListPageProps) {
     () => filtered.slice((current - 1) * pageSize, current * pageSize),
     [current, filtered, pageSize],
   );
+
+  /**
+   * 自测用的释义与「出哪些题」。
+   *
+   * 题面是中文，所以自测**必须**有释义 —— 它和中文模式共用同一份缓存与
+   * `ensureGlosses`，不另开一条加载路径。入口点开时把当前板块补齐。
+   */
+  /** 出题范围的可读描述，同时写进流水（「A1」「全库」） */
+  const drillScopeLabel = searching ? "全库" : bucketLabel(view.level);
+
+  const { loadDrills } = store;
+  const openDrill = useCallback(() => {
+    setDrillOpen(true);
+    setDrillLoading(true);
+    // 历史与释义一起取：结果页要靠历史说「比上次多对几个」
+    void loadDrills();
+    void ensureGlosses(searching ? "ALL" : view.level)
+      .catch(() => undefined)
+      .finally(() => setDrillLoading(false));
+  }, [ensureGlosses, loadDrills, searching, view.level]);
 
   /*
    * 当前视图要的等级，数据是不是已经进了 state。
@@ -157,7 +235,7 @@ export function WordListPage({ store }: WordListPageProps) {
    * 档位 / 牛津这两维读的是索引，索引没补齐时它们的结果不可信 ——
    * 那种情况一律当「还没加载」，宁可多转一秒圈，也不要先报一个假的「0 条」。
    */
-  const viewNeedsIndexes = view.tier !== "all" || view.oxford !== "all";
+  const viewNeedsIndexes = viewNeedsIndexesEarly;
   const scopeLoaded =
     (!viewNeedsIndexes || store.indexesReady) &&
     (searching || view.level === "ALL"
@@ -181,7 +259,7 @@ export function WordListPage({ store }: WordListPageProps) {
    * 切到别的页面再回来时位置要还在；而翻页 / 换筛选后必须回到顶部 ——
    * 否则从第 3 页翻到第 4 页，人还停在第 3 页中间的位置。 */
   const scroll = useScrollKeeper<HTMLDivElement>(active);
-  const scrollKey = `${view.level}|${view.mode}|${view.tier}|${view.oxford}|${view.pos}|${view.initial}|${view.query}|${current}`;
+  const scrollKey = `${view.level}|${view.mode}|${view.tier}|${view.oxford}|${view.pos}|${view.initial}|${view.review}|${view.confusable}|${view.display}|${view.order}|${view.query}|${current}`;
   const lastScrollKey = useRef(scrollKey);
   useEffect(() => {
     if (lastScrollKey.current === scrollKey) return;
@@ -258,6 +336,9 @@ export function WordListPage({ store }: WordListPageProps) {
         oxford: next.oxford,
         pos: next.pos,
         initial: next.initial,
+        review: next.review,
+        confusable: next.confusable,
+        display: next.display,
         order: next.order,
         /**
          * 每次「确定」都换一颗种子，等于再点一次就重洗一遍。
@@ -286,6 +367,9 @@ export function WordListPage({ store }: WordListPageProps) {
       oxford: "all",
       pos: "all",
       initial: "all",
+      review: "all",
+      confusable: "all",
+      display: "word",
       order: "default",
       seed: 0,
       query: "",
@@ -311,6 +395,9 @@ export function WordListPage({ store }: WordListPageProps) {
           oxford={view.oxford}
           pos={view.pos}
           initial={view.initial}
+          review={view.review}
+          confusable={view.confusable}
+          display={view.display}
           order={view.order}
           defaultLevel={store.prefs.defaultLevel}
           query={view.query}
@@ -338,7 +425,7 @@ export function WordListPage({ store }: WordListPageProps) {
         <>
           {/* 板块进度常驻（空态也显示）：筛选结果为空时更需要知道「这个板块本来有多少」 */}
           <div className="shrink-0">
-            <ScopeProgress progress={progress} />
+            <ScopeProgress progress={progress} onDrill={empty ? undefined : openDrill} />
           </div>
 
           {!empty && (
@@ -358,7 +445,8 @@ export function WordListPage({ store }: WordListPageProps) {
                 />
               </span>
               <span className="w-6 text-right">#</span>
-              <span className="flex-1">单词</span>
+              {/* 表头跟着显示语言走：中文态下面这一列确实是释义，不是单词 */}
+              <span className="flex-1">{chineseMode ? "中文释义" : "单词"}</span>
               <span className="hidden lg:inline">掌握</span>
             </div>
           )}
@@ -371,6 +459,7 @@ export function WordListPage({ store }: WordListPageProps) {
                 mode={view.mode}
                 pos={view.pos}
                 initial={view.initial}
+                review={view.review}
                 query={view.query}
                 onReset={resetAll}
               />
@@ -390,6 +479,9 @@ export function WordListPage({ store }: WordListPageProps) {
                     word={word}
                     index={(current - 1) * pageSize + index + 1}
                     mastered={store.mastered.has(word.key)}
+                    markedAt={store.mastered.get(word.key)}
+                    gloss={store.glosses.get(word.key) ?? ""}
+                    chineseMode={chineseMode}
                     checked={selection.keys.has(word.key)}
                     onToggleSelect={selection.toggle}
                     // 交给行自己带 key 回调，父组件不再为每行新建闭包
@@ -407,6 +499,20 @@ export function WordListPage({ store }: WordListPageProps) {
           )}
         </>
       )}
+
+      <DrillSheet
+        open={drillOpen}
+        onOpenChange={setDrillOpen}
+        words={filtered}
+        glosses={store.glosses}
+        glossesLoading={drillLoading}
+        mastered={store.mastered}
+        onMarkTodo={(keys) => void store.toggleMastery(keys, false)}
+        history={store.drills}
+        onFinish={(result) => {
+          void store.saveDrill({ ...result, scope: drillScopeLabel });
+        }}
+      />
 
       {!empty && !loading && (
         <BulkSheet
@@ -434,6 +540,7 @@ function EmptyState({
   mode,
   pos,
   initial,
+  review,
   query,
   onReset,
 }: {
@@ -441,6 +548,7 @@ function EmptyState({
   mode: MasteryFilter;
   pos: PosFilter;
   initial: InitialFilter;
+  review: ReviewFilter;
   query: string;
   onReset: () => void;
 }) {
@@ -449,17 +557,21 @@ function EmptyState({
   const scope = level === "ALL" || query.trim() ? "全库" : bucketLabel(level);
   const reason = query
     ? `没有匹配「${query}」的词`
-    : mode === "done"
-      ? `${scope} 还没有标记已掌握的词`
-      : `${scope} 里没有符合条件的词`;
+    : review !== "all"
+      ? `${scope} 里没有标满 ${review === "d7" ? 7 : 30} 天的词`
+      : mode === "done"
+        ? `${scope} 还没有标记已掌握的词`
+        : `${scope} 里没有符合条件的词`;
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 py-16 text-center">
       <ListFilter className="h-8 w-8 text-ink-mute" aria-hidden="true" />
       <p className="text-[14px] font-medium text-ink">{reason}</p>
       <p className="text-[13px] text-ink-soft">
-        {pos !== "all" || initial !== "all"
-          ? "词性或首字母这一档可能没有词，换个条件再看。"
-          : "换个筛选条件，或回到全库继续找。"}
+        {review !== "all"
+          ? "「距上次标记」只统计已标掌握的词；这一档是空的，说明没有符合天数的词。"
+          : pos !== "all" || initial !== "all"
+            ? "词性或首字母这一档可能没有词，换个条件再看。"
+            : "换个筛选条件，或回到全库继续找。"}
       </p>
       <Button variant="outline" size="touch" onClick={onReset}>
         清空筛选
